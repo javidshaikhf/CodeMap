@@ -18,10 +18,6 @@
   <a href="./docs/demo.mp4"><img src="https://img.shields.io/badge/Watch-Demo-111827?style=for-the-badge&logo=video&logoColor=white" alt="Watch Demo" /></a>
 </p>
 
-GitHub does not reliably render local inline videos in `README.md`, so the recommended setup is:
-
-- `docs/demo-poster.png` for the preview image
-- `docs/demo.mp4` for the clickable demo video
 
 ## Tech Stack
 
