@@ -44,6 +44,14 @@ It scans a repository, detects bounded projects like `frontend`, `backend`, or a
 
 Built with Go, TypeScript, and a lightweight browser-based viewer, CodeMap is designed to run inside GitHub Actions and publish a PR-friendly artifact.
 
+=======
+## Demo
+
+[Watch the demo](./docs/demo.mp4)
+
+![Demo Preview](./docs/demo-poster.png)
+
+
 ## What It Does
 
 - Detects separate projects inside a repo from common manifests like `package.json`, `go.mod`, `Package.swift`, `pyproject.toml`, `pom.xml`, and `Cargo.toml`
