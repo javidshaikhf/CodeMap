@@ -1,24 +1,48 @@
 # CodeMap
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Multi--Language-Architecture%20Visualizer-0f766e?style=for-the-badge" alt="CodeMap" />
+  <img src="https://img.shields.io/badge/PR-First-c2410c?style=for-the-badge" alt="PR First" />
+  <img src="https://img.shields.io/badge/GitHub-Actions-1f2937?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions" />
+</p>
+
+<p align="center">
+  See project boundaries, dependencies, and architecture drift directly in pull requests.
+</p>
+
+## Demo
+
+[![Demo Preview](./docs/demo-poster.png)](./docs/demo.mp4)
+
+<p align="center">
+  <a href="./docs/demo.mp4"><img src="https://img.shields.io/badge/Watch-Demo-111827?style=for-the-badge&logo=video&logoColor=white" alt="Watch Demo" /></a>
+</p>
+
+GitHub does not reliably render local inline videos in `README.md`, so the recommended setup is:
+
+- `docs/demo-poster.png` for the preview image
+- `docs/demo.mp4` for the clickable demo video
+
+## Tech Stack
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=go,ts,react,github" alt="Tech Stack" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Analyzer-Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Tooling-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Viewer-Web_UI-61DAFB?style=flat-square&logo=react&logoColor=0b0f19" alt="React" />
+  <img src="https://img.shields.io/badge/CI-GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white" alt="GitHub Actions" />
+</p>
+
+## Overview
+
 CodeMap is a multi-language architecture visualizer for pull requests.
 
 It scans a repository, detects bounded projects like `frontend`, `backend`, or an iOS app, and generates interactive dependency maps so developers can understand what connects to what before merging code.
 
 Built with Go, TypeScript, and a lightweight browser-based viewer, CodeMap is designed to run inside GitHub Actions and publish a PR-friendly artifact.
-
-## Demo
-
-Add your demo recording at `docs/demo.mp4` and GitHub will render it inline:
-
-```html
-<video src="docs/demo.mp4" controls width="100%"></video>
-```
-
-If you also want a poster image, place one at `docs/demo-poster.png` and use:
-
-```html
-<video src="docs/demo.mp4" controls width="100%" poster="docs/demo-poster.png"></video>
-```
 
 ## What It Does
 
@@ -27,7 +51,7 @@ If you also want a poster image, place one at `docs/demo-poster.png` and use:
 - Produces a language-agnostic graph using `project`, `directory`, `file`, `module`, and `symbol` nodes
 - Adds shallow relationship edges such as `contains`, `depends_on`, and cross-project links
 - Highlights PR-touched files so reviewers can inspect the changed neighborhood first
-- Ships an interactive viewer with pan, zoom, drag, selection, and inspector panels
+- Ships an interactive viewer with pan, zoom, drag, node selection, neighbor highlighting, and an inspector panel
 
 ## Why This Exists
 
@@ -134,3 +158,14 @@ That means some languages currently get shallower graphs than others, but the ar
 - Add architecture rules and optional CI enforcement
 - Improve layout and graph navigation for large repos
 - Persist custom node positions in the viewer
+
+## Connect
+
+<p align="center">
+  <a href="https://www.linkedin.com/in/javidshaikh/">
+    <img src="https://img.shields.io/badge/LinkedIn-Javid%20Shaikh-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" />
+  </a>
+  <a href="https://x.com/ByJavidShaikh">
+    <img src="https://img.shields.io/badge/X-@ByJavidShaikh-111827?style=for-the-badge&logo=x&logoColor=white" alt="X" />
+  </a>
+</p>
