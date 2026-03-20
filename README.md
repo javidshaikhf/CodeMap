@@ -1,14 +1,66 @@
 # CodeMap
 
-CodeMap is a multi-language repository visualizer built with Go, TypeScript, and React. It detects bounded projects inside a repo, generates one graph per project, and ships a lightweight viewer that can be attached to pull requests in GitHub Actions.
+CodeMap is a multi-language architecture visualizer for pull requests.
 
-## What v1 does
+It scans a repository, detects bounded projects like `frontend`, `backend`, or an iOS app, and generates interactive dependency maps so developers can understand what connects to what before merging code.
 
-- Detects projects from common manifests like `package.json`, `go.mod`, `Package.swift`, `pyproject.toml`, `pom.xml`, and `Cargo.toml`
-- Produces one graph per detected project instead of collapsing the whole repo into one map
-- Builds a language-agnostic graph with `project`, `directory`, `file`, `module`, and `symbol` nodes
-- Adds shallow `contains`, `depends_on`, and cross-project edges across many languages
-- Highlights changed files from a pull request so developers can inspect the touched area first
+Built with Go, TypeScript, and a lightweight browser-based viewer, CodeMap is designed to run inside GitHub Actions and publish a PR-friendly artifact.
+
+## Demo
+
+Add your demo recording at `docs/demo.mp4` and GitHub will render it inline:
+
+```html
+<video src="docs/demo.mp4" controls width="100%"></video>
+```
+
+If you also want a poster image, place one at `docs/demo-poster.png` and use:
+
+```html
+<video src="docs/demo.mp4" controls width="100%" poster="docs/demo-poster.png"></video>
+```
+
+## What It Does
+
+- Detects separate projects inside a repo from common manifests like `package.json`, `go.mod`, `Package.swift`, `pyproject.toml`, `pom.xml`, and `Cargo.toml`
+- Generates one graph per detected project instead of forcing the whole repository into a single unreadable map
+- Produces a language-agnostic graph using `project`, `directory`, `file`, `module`, and `symbol` nodes
+- Adds shallow relationship edges such as `contains`, `depends_on`, and cross-project links
+- Highlights PR-touched files so reviewers can inspect the changed neighborhood first
+- Ships an interactive viewer with pan, zoom, drag, selection, and inspector panels
+
+## Why This Exists
+
+Large repositories hide architecture drift.
+
+Developers often merge code without seeing:
+
+- what module is now depending on what
+- whether a frontend is reaching into backend internals
+- whether a new change crosses a boundary it should not
+- how a single PR changes the dependency shape of a project
+
+CodeMap makes those relationships visible directly in the PR workflow.
+
+## Quick Start
+
+From the CodeMap repo root:
+
+```bash
+go run ./cmd/codemap analyze --repo . --out ./codemap-out
+```
+
+For another repository, point `--repo` at that project:
+
+```bash
+go run ./cmd/codemap analyze --repo /path/to/your/repo --out ./codemap-out
+```
+
+If `--repo` is an absolute path and `--out` is relative, the output is written inside the scanned repo.
+
+Open the generated viewer:
+
+- `codemap-out/viewer/index.html`
 
 ## CLI
 
@@ -24,7 +76,7 @@ Important flags:
 - `--changed-files` accepts a comma-separated list of repo-relative paths
 - `--max-files` limits file count per project to keep CI safe
 
-The command writes:
+Generated output:
 
 - `manifest.json`
 - `graphs/<project-id>.json`
@@ -34,9 +86,19 @@ The command writes:
 
 ## Viewer
 
-The generated viewer lives in `codemap-out/viewer/index.html`.
+The generated viewer is offline-friendly and artifact-friendly.
 
-The checked-in `web/src` folder mirrors the viewer logic in TypeScript for future iteration. The current emitted bundle is a dependency-light static viewer embedded by the Go binary so GitHub Actions can produce an artifact without a separate frontend build step.
+It currently supports:
+
+- multiple project graphs
+- pan and zoom
+- dragging nodes
+- selecting nodes
+- highlighting connected nodes and lines
+- inspector details for the selected node
+- changed-node filtering
+
+The checked-in `web/src` folder mirrors the viewer direction in TypeScript for future iteration. The emitted viewer bundle used by the CLI is embedded by the Go binary so GitHub Actions can produce a self-contained artifact without an additional frontend build step.
 
 ## GitHub Actions
 
@@ -55,8 +117,20 @@ The action:
 - uploads the generated artifact
 - posts or updates a PR comment with the summary
 
+## Current Scope
+
+CodeMap is intentionally broad-first for v1:
+
+- support many languages with graceful degradation
+- prioritize useful dependency maps over deep semantic perfection
+- keep the output PR-friendly and easy to open
+
+That means some languages currently get shallower graphs than others, but the architecture map is still useful for spotting project boundaries and dependency drift.
+
 ## Roadmap
 
 - Replace the heuristic parser with deeper Tree-sitter-backed parsers per language
 - Add richer reference and call edges
-- Add optional architecture rules and CI enforcement
+- Add architecture rules and optional CI enforcement
+- Improve layout and graph navigation for large repos
+- Persist custom node positions in the viewer
