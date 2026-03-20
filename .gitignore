@@ -1,0 +1,4 @@
+.cache/
+tmp/
+codemap-out/
+testdata/**/tmp/
