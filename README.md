@@ -8,17 +8,10 @@ Built with Go, TypeScript, and a lightweight browser-based viewer, CodeMap is de
 
 ## Demo
 
-Add your demo recording at `docs/demo.mp4` and GitHub will render it inline:
+[Watch the demo](./docs/demo.mp4)
 
-```html
-<video src="docs/demo.mp4" controls width="100%"></video>
-```
+![Demo Preview](./docs/demo-poster.png)
 
-If you also want a poster image, place one at `docs/demo-poster.png` and use:
-
-```html
-<video src="docs/demo.mp4" controls width="100%" poster="docs/demo-poster.png"></video>
-```
 
 ## What It Does
 
