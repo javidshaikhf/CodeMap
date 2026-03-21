@@ -10,6 +10,10 @@
   See project boundaries, dependencies, and architecture drift directly in pull requests.
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Works%20Across-Go%20%C2%B7%20TS%20%C2%B7%20Swift%20%C2%B7%20Python%20%C2%B7%20Java%20%C2%B7%20Kotlin%20%C2%B7%20Rust%20%C2%B7%20C%23%20%C2%B7%20PHP%20%C2%B7%20Dart%20%C2%B7%20C%2FC%2B%2B-334155?style=flat-square" alt="Broad stack support" />
+</p>
+
 ## Demo
 
 [![Demo Preview](./docs/demo-poster.png)](./docs/demo.mp4)
@@ -36,13 +40,13 @@
 
 CodeMap is a multi-language architecture visualizer for pull requests.
 
-It scans a repository, detects bounded projects like `frontend`, `backend`, or an iOS app, and generates interactive dependency maps so developers can understand what connects to what before merging code.
+It scans a repository, detects bounded projects across many tech stacks, and generates interactive dependency maps so developers can understand what connects to what before merging code.
 
 Built with Go, TypeScript, and a lightweight browser-based viewer, CodeMap is designed to run inside GitHub Actions and publish a PR-friendly artifact.
 
 ## What It Does
 
-- Detects separate projects inside a repo from common manifests like `package.json`, `go.mod`, `Package.swift`, `pyproject.toml`, `pom.xml`, and `Cargo.toml`
+- Detects separate projects inside a repo from common manifests like `package.json`, `go.mod`, `Package.swift`, `Podfile`, `pyproject.toml`, `pom.xml`, `Cargo.toml`, `composer.json`, `pubspec.yaml`, `.csproj`, `.sln`, and more
 - Generates one graph per detected project instead of forcing the whole repository into a single unreadable map
 - Produces a language-agnostic graph using `project`, `directory`, `file`, `module`, and `symbol` nodes
 - Adds shallow relationship edges such as `contains`, `depends_on`, and cross-project links
@@ -51,12 +55,12 @@ Built with Go, TypeScript, and a lightweight browser-based viewer, CodeMap is de
 
 ## Why This Exists
 
-Large repositories hide architecture drift.
+Large repositories hide architecture drift regardless of stack.
 
 Developers often merge code without seeing:
 
 - what module is now depending on what
-- whether a frontend is reaching into backend internals
+- whether one module, service, app, or package is reaching into another layer it should not
 - whether a new change crosses a boundary it should not
 - how a single PR changes the dependency shape of a project
 
@@ -70,7 +74,7 @@ From the CodeMap repo root:
 go run ./cmd/codemap analyze --repo . --out ./codemap-out
 ```
 
-For another repository, point `--repo` at that project:
+For another repository, point `--repo` at that project, regardless of whether it is web, mobile, backend, native, or a mixed monorepo:
 
 ```bash
 go run ./cmd/codemap analyze --repo /path/to/your/repo --out ./codemap-out
@@ -141,11 +145,11 @@ The action:
 
 CodeMap is intentionally broad-first for v1:
 
-- support many languages with graceful degradation
+- support many languages and stacks with graceful degradation
 - prioritize useful dependency maps over deep semantic perfection
 - keep the output PR-friendly and easy to open
 
-That means some languages currently get shallower graphs than others, but the architecture map is still useful for spotting project boundaries and dependency drift.
+That means some stacks currently get shallower graphs than others, but the architecture map is still useful for spotting project boundaries and dependency drift across web, mobile, backend, native, and mixed-language repositories.
 
 ## Roadmap
 

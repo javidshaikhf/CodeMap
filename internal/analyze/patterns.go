@@ -53,8 +53,20 @@ var languageByExt = map[string]languageSpec{
 		},
 		commentStart: []string{"#"},
 	},
-	".java": jvmSpec("java"),
-	".kt":   jvmSpec("kotlin"),
+	".java":  jvmSpec("java"),
+	".kt":    jvmSpec("kotlin"),
+	".scala": jvmSpec("scala"),
+	".cs": {
+		name: "csharp",
+		imports: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*using\s+([A-Z_a-z][\w\.]*)\s*;`),
+		},
+		symbols: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*(?:public|private|protected|internal)?\s*(?:sealed\s+|abstract\s+)?(?:class|interface|record|struct|enum)\s+([A-Z_a-z][\w]*)`),
+			regexp.MustCompile(`(?m)^\s*(?:public|private|protected|internal)?\s*(?:static\s+)?[\w<>\[\], ?]+\s+([A-Z_a-z][\w]*)\s*\(`),
+		},
+		commentStart: []string{"//"},
+	},
 	".rs": {
 		name: "rust",
 		imports: []*regexp.Regexp{
@@ -76,6 +88,52 @@ var languageByExt = map[string]languageSpec{
 			regexp.MustCompile(`(?m)^\s*class\s+([A-Z_a-z][\w:]*)`),
 			regexp.MustCompile(`(?m)^\s*module\s+([A-Z_a-z][\w:]*)`),
 			regexp.MustCompile(`(?m)^\s*def\s+([A-Z_a-z][\w!?=]*)`),
+		},
+		commentStart: []string{"#"},
+	},
+	".php": {
+		name: "php",
+		imports: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*(?:require|require_once|include|include_once)\s*\(?["']([^"']+)["']`),
+			regexp.MustCompile(`(?m)^\s*use\s+([A-Z_a-z\\][\w\\]+)`),
+		},
+		symbols: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*(?:final\s+|abstract\s+)?class\s+([A-Z_a-z][\w]*)`),
+			regexp.MustCompile(`(?m)^\s*interface\s+([A-Z_a-z][\w]*)`),
+			regexp.MustCompile(`(?m)^\s*function\s+([A-Z_a-z][\w]*)\s*\(`),
+		},
+		commentStart: []string{"//", "#"},
+	},
+	".dart": {
+		name: "dart",
+		imports: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*import\s+['"]([^'"]+)['"]`),
+			regexp.MustCompile(`(?m)^\s*export\s+['"]([^'"]+)['"]`),
+		},
+		symbols: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*(?:abstract\s+)?class\s+([A-Z_a-z][\w]*)`),
+			regexp.MustCompile(`(?m)^\s*(?:mixin|enum|extension)\s+([A-Z_a-z][\w]*)`),
+			regexp.MustCompile(`(?m)^\s*(?:[A-Z_a-z_<>\?\[\]]+\s+)?([A-Z_a-z][\w]*)\s*\(`),
+		},
+		commentStart: []string{"//"},
+	},
+	".c":   cSpec("c"),
+	".h":   cSpec("c"),
+	".cpp": cSpec("cpp"),
+	".cc":  cSpec("cpp"),
+	".cxx": cSpec("cpp"),
+	".hpp": cSpec("cpp"),
+	".hh":  cSpec("cpp"),
+	".m":   cSpec("objective-c"),
+	".mm":  cSpec("objective-cpp"),
+	".sh": {
+		name: "shell",
+		imports: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*\.\s+([^\s]+)`),
+			regexp.MustCompile(`(?m)^\s*source\s+([^\s]+)`),
+		},
+		symbols: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*([A-Z_a-z][\w]*)\s*\(\)\s*\{`),
 		},
 		commentStart: []string{"#"},
 	},
@@ -108,6 +166,20 @@ func jvmSpec(name string) languageSpec {
 		symbols: []*regexp.Regexp{
 			regexp.MustCompile(`(?m)^\s*(?:public\s+)?(?:class|interface|enum|record)\s+([A-Z_a-z][\w]*)`),
 			regexp.MustCompile(`(?m)^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\], ?]+\s+([A-Z_a-z][\w]*)\s*\(`),
+		},
+		commentStart: []string{"//"},
+	}
+}
+
+func cSpec(name string) languageSpec {
+	return languageSpec{
+		name: name,
+		imports: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*#include\s+[<"]([^>"]+)[>"]`),
+		},
+		symbols: []*regexp.Regexp{
+			regexp.MustCompile(`(?m)^\s*(?:class|struct|enum)\s+([A-Z_a-z][\w]*)`),
+			regexp.MustCompile(`(?m)^\s*(?:static\s+)?[\w\*\s]+?\s+([A-Z_a-z][\w]*)\s*\([^;]*\)\s*\{`),
 		},
 		commentStart: []string{"//"},
 	}

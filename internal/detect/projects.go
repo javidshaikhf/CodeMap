@@ -11,21 +11,34 @@ import (
 )
 
 var manifests = map[string]string{
-	"package.json":     "javascript",
-	"go.mod":           "go",
-	"Package.swift":    "swift",
-	"pyproject.toml":   "python",
-	"requirements.txt": "python",
-	"pom.xml":          "java",
-	"build.gradle":     "jvm",
-	"build.gradle.kts": "jvm",
-	"Cargo.toml":       "rust",
-	"composer.json":    "php",
-	"Gemfile":          "ruby",
-	"mix.exs":          "elixir",
-	"project.clj":      "clojure",
-	"*.xcodeproj":      "swift",
-	"*.xcworkspace":    "swift",
+	"package.json":        "javascript",
+	"go.mod":              "go",
+	"Package.swift":       "swift",
+	"Podfile":             "swift",
+	"Cartfile":            "swift",
+	"Cartfile.resolved":   "swift",
+	"pyproject.toml":      "python",
+	"requirements.txt":    "python",
+	"pom.xml":             "java",
+	"build.gradle":        "jvm",
+	"build.gradle.kts":    "jvm",
+	"settings.gradle":     "jvm",
+	"settings.gradle.kts": "jvm",
+	"Cargo.toml":          "rust",
+	"composer.json":       "php",
+	"pubspec.yaml":        "dart",
+	"Gemfile":             "ruby",
+	"mix.exs":             "elixir",
+	"project.clj":         "clojure",
+	"CMakeLists.txt":      "cpp",
+	"Makefile":            "native",
+	"meson.build":         "native",
+	"*.xcodeproj":         "swift",
+	"*.xcworkspace":       "swift",
+	"*.csproj":            "dotnet",
+	"*.fsproj":            "dotnet",
+	"*.vbproj":            "dotnet",
+	"*.sln":               "dotnet",
 }
 
 func Discover(repoRoot string, cfg config.Config) ([]model.Project, error) {
@@ -47,7 +60,8 @@ func Discover(repoRoot string, cfg config.Config) ([]model.Project, error) {
 
 		if d.IsDir() && hasManifestDirName(d.Name()) {
 			root := filepath.Dir(path)
-			addProject(&projects, seen, repoRoot, root, d.Name(), manifests["*."+strings.TrimPrefix(filepath.Ext(d.Name()), ".")])
+			lang, _ := matchManifestName(d.Name())
+			addProject(&projects, seen, repoRoot, root, d.Name(), lang)
 			return filepath.SkipDir
 		}
 
@@ -55,7 +69,7 @@ func Discover(repoRoot string, cfg config.Config) ([]model.Project, error) {
 			return nil
 		}
 
-		lang, ok := manifests[d.Name()]
+		lang, ok := matchManifestName(d.Name())
 		if !ok {
 			return nil
 		}
@@ -170,4 +184,27 @@ func shouldSkipDir(repoRoot, path string, d os.DirEntry) bool {
 
 func hasManifestDirName(name string) bool {
 	return strings.HasSuffix(name, ".xcodeproj") || strings.HasSuffix(name, ".xcworkspace")
+}
+
+func matchManifestName(name string) (string, bool) {
+	if lang, ok := manifests[name]; ok {
+		return lang, true
+	}
+
+	switch {
+	case strings.HasSuffix(name, ".csproj"):
+		return manifests["*.csproj"], true
+	case strings.HasSuffix(name, ".fsproj"):
+		return manifests["*.fsproj"], true
+	case strings.HasSuffix(name, ".vbproj"):
+		return manifests["*.vbproj"], true
+	case strings.HasSuffix(name, ".sln"):
+		return manifests["*.sln"], true
+	case strings.HasSuffix(name, ".xcodeproj"):
+		return manifests["*.xcodeproj"], true
+	case strings.HasSuffix(name, ".xcworkspace"):
+		return manifests["*.xcworkspace"], true
+	default:
+		return "", false
+	}
 }
