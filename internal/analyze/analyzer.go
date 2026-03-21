@@ -38,6 +38,14 @@ type fileParseResult struct {
 	symbols  []string
 }
 
+type analyzedFile struct {
+	projectRel string
+	repoRel    string
+	language   string
+	imports    []string
+	changed    bool
+}
+
 func Run(opts Options) (model.Result, error) {
 	projects, err := detect.Discover(opts.RepoRoot, opts.Config)
 	if err != nil {
@@ -106,19 +114,99 @@ func buildProjectGraph(opts Options, project model.Project, changedSet map[strin
 
 	graph := model.Graph{
 		Project: project,
-		Nodes: []model.Node{{
-			ID:    project.ID,
-			Label: project.Name,
-			Type:  model.NodeProject,
-			Path:  project.Root,
-		}},
+	}
+	files, err := collectProjectFiles(opts, project, rootAbs, changedSet, parser)
+	if err != nil {
+		return model.Graph{}, err
 	}
 
-	nodes := map[string]model.Node{
-		project.ID: graph.Nodes[0],
-	}
+	nodes := map[string]model.Node{}
 	edges := map[string]model.Edge{}
+
+	filesByRepoPath := make(map[string]analyzedFile, len(files))
+	for _, file := range files {
+		filesByRepoPath[file.repoRel] = file
+		nodes[nodeID(project.ID, "file", file.repoRel)] = model.Node{
+			ID:        nodeID(project.ID, "file", file.repoRel),
+			Label:     filepath.Base(file.repoRel),
+			Type:      model.NodeFile,
+			Language:  file.language,
+			Path:      file.repoRel,
+			ProjectID: project.ID,
+			Changed:   file.changed,
+		}
+	}
+
+	for _, file := range files {
+		fileNodeID := nodeID(project.ID, "file", file.repoRel)
+		for _, imp := range file.imports {
+			if target, ok := resolveInternalImport(file, imp, project, filesByRepoPath); ok {
+				targetNodeID := nodeID(project.ID, "file", target.repoRel)
+				edges[edgeID(project.ID, fileNodeID, targetNodeID, model.EdgeDependsOn)] = model.Edge{
+					ID:        edgeID(project.ID, fileNodeID, targetNodeID, model.EdgeDependsOn),
+					Source:    fileNodeID,
+					Target:    targetNodeID,
+					Type:      model.EdgeDependsOn,
+					ProjectID: project.ID,
+					Changed:   file.changed || target.changed,
+					Metadata: map[string]string{
+						"import": imp,
+						"kind":   "script",
+					},
+				}
+				continue
+			}
+
+			moduleID := nodeID(project.ID, "module", imp)
+			nodes[moduleID] = model.Node{
+				ID:        moduleID,
+				Label:     imp,
+				Type:      model.NodeModule,
+				Language:  file.language,
+				Path:      imp,
+				ProjectID: project.ID,
+				Changed:   file.changed,
+			}
+			edges[edgeID(project.ID, fileNodeID, moduleID, model.EdgeDependsOn)] = model.Edge{
+				ID:        edgeID(project.ID, fileNodeID, moduleID, model.EdgeDependsOn),
+				Source:    fileNodeID,
+				Target:    moduleID,
+				Type:      model.EdgeDependsOn,
+				ProjectID: project.ID,
+				Changed:   file.changed,
+				Metadata: map[string]string{
+					"import": imp,
+					"kind":   "module",
+				},
+			}
+			if crossProject := findCrossProject(imp, project, allProjects); crossProject != nil {
+				edges[edgeID(project.ID, fileNodeID, crossProject.ID, model.EdgeCrossProject)] = model.Edge{
+					ID:           edgeID(project.ID, fileNodeID, crossProject.ID, model.EdgeCrossProject),
+					Source:       fileNodeID,
+					Target:       crossProject.ID,
+					Type:         model.EdgeCrossProject,
+					ProjectID:    project.ID,
+					CrossProject: true,
+					Changed:      file.changed,
+					Metadata: map[string]string{
+						"import": imp,
+					},
+				}
+			}
+		}
+	}
+
+	pruneDisconnectedNodes(nodes, edges)
+	graph.Nodes = mapValues(nodes)
+	graph.Edges = mapEdgeValues(edges)
+	sort.Slice(graph.Nodes, func(i, j int) bool { return graph.Nodes[i].ID < graph.Nodes[j].ID })
+	sort.Slice(graph.Edges, func(i, j int) bool { return graph.Edges[i].ID < graph.Edges[j].ID })
+	return graph, nil
+}
+
+func collectProjectFiles(opts Options, project model.Project, rootAbs string, changedSet map[string]bool, parser parser) ([]analyzedFile, error) {
 	filesSeen := 0
+	var files []analyzedFile
 
 	err := filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -145,6 +233,10 @@ func buildProjectGraph(opts Options, project model.Project, changedSet map[strin
 			return nil
 		}
 
+		if _, ok := detectLanguage(relFromRepo); !ok {
+			return nil
+		}
+
 		filesSeen++
 		if opts.MaxFiles > 0 && filesSeen > opts.MaxFiles {
 			return fmt.Errorf("project %s exceeds max-files limit (%d)", project.Name, opts.MaxFiles)
@@ -155,102 +247,26 @@ func buildProjectGraph(opts Options, project model.Project, changedSet map[strin
 			return err
 		}
 
-		fileNode := model.Node{
-			ID:        nodeID(project.ID, "file", relFromRepo),
-			Label:     filepath.Base(path),
-			Type:      model.NodeFile,
-			Language:  languageFromPath(path),
-			Path:      relFromRepo,
-			ProjectID: project.ID,
-			Changed:   changedSet[relFromRepo],
-		}
-		nodes[fileNode.ID] = fileNode
-		if filepath.ToSlash(filepath.Dir(relFromProject)) == "." {
-			edges[edgeID(project.ID, project.ID, fileNode.ID, model.EdgeContains)] = model.Edge{
-				ID:        edgeID(project.ID, project.ID, fileNode.ID, model.EdgeContains),
-				Source:    project.ID,
-				Target:    fileNode.ID,
-				Type:      model.EdgeContains,
-				ProjectID: project.ID,
-				Changed:   fileNode.Changed,
-			}
-		}
-
-		addDirectoryNodes(project, relFromProject, relFromRepo, changedSet, nodes, edges)
-
 		parsed := parser.parse(project, relFromRepo, content)
-		if parsed.language != "" {
-			fileNode.Language = parsed.language
-			nodes[fileNode.ID] = fileNode
+		if parsed.language == "" {
+			return nil
 		}
 
-		for _, imp := range parsed.imports {
-			moduleID := nodeID(project.ID, "module", imp)
-			nodes[moduleID] = model.Node{
-				ID:        moduleID,
-				Label:     imp,
-				Type:      model.NodeModule,
-				Language:  parsed.language,
-				Path:      imp,
-				ProjectID: project.ID,
-				Changed:   fileNode.Changed,
-			}
-			edges[edgeID(project.ID, fileNode.ID, moduleID, model.EdgeDependsOn)] = model.Edge{
-				ID:        edgeID(project.ID, fileNode.ID, moduleID, model.EdgeDependsOn),
-				Source:    fileNode.ID,
-				Target:    moduleID,
-				Type:      model.EdgeDependsOn,
-				ProjectID: project.ID,
-				Changed:   fileNode.Changed,
-			}
-			if crossProject := findCrossProject(imp, project, allProjects); crossProject != nil {
-				edges[edgeID(project.ID, fileNode.ID, crossProject.ID, model.EdgeCrossProject)] = model.Edge{
-					ID:           edgeID(project.ID, fileNode.ID, crossProject.ID, model.EdgeCrossProject),
-					Source:       fileNode.ID,
-					Target:       crossProject.ID,
-					Type:         model.EdgeCrossProject,
-					ProjectID:    project.ID,
-					CrossProject: true,
-					Changed:      fileNode.Changed,
-					Metadata: map[string]string{
-						"import": imp,
-					},
-				}
-			}
-		}
-
-		for _, symbol := range parsed.symbols {
-			symbolID := nodeID(project.ID, "symbol", relFromRepo+":"+symbol)
-			nodes[symbolID] = model.Node{
-				ID:        symbolID,
-				Label:     symbol,
-				Type:      model.NodeSymbol,
-				Language:  parsed.language,
-				Path:      relFromRepo,
-				ProjectID: project.ID,
-				Changed:   fileNode.Changed,
-			}
-			edges[edgeID(project.ID, fileNode.ID, symbolID, model.EdgeContains)] = model.Edge{
-				ID:        edgeID(project.ID, fileNode.ID, symbolID, model.EdgeContains),
-				Source:    fileNode.ID,
-				Target:    symbolID,
-				Type:      model.EdgeContains,
-				ProjectID: project.ID,
-				Changed:   fileNode.Changed,
-			}
-		}
+		files = append(files, analyzedFile{
+			projectRel: relFromProject,
+			repoRel:    relFromRepo,
+			language:   parsed.language,
+			imports:    parsed.imports,
+			changed:    changedSet[relFromRepo],
+		})
 
 		return nil
 	})
 	if err != nil {
-		return model.Graph{}, err
+		return nil, err
 	}
 
-	graph.Nodes = mapValues(nodes)
-	graph.Edges = mapEdgeValues(edges)
-	sort.Slice(graph.Nodes, func(i, j int) bool { return graph.Nodes[i].ID < graph.Nodes[j].ID })
-	sort.Slice(graph.Edges, func(i, j int) bool { return graph.Edges[i].ID < graph.Edges[j].ID })
-	return graph, nil
+	return files, nil
 }
 
 func (heuristicParser) parse(project model.Project, relPath string, content []byte) fileParseResult {
@@ -469,6 +485,65 @@ func dedupe(values []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func resolveInternalImport(source analyzedFile, importValue string, project model.Project, filesByRepoPath map[string]analyzedFile) (analyzedFile, bool) {
+	if importValue == "" {
+		return analyzedFile{}, false
+	}
+
+	baseRepoDir := filepath.ToSlash(filepath.Dir(source.repoRel))
+	baseCandidate := filepath.ToSlash(filepath.Clean(filepath.Join(baseRepoDir, importValue)))
+	for _, candidate := range importCandidates(baseCandidate) {
+		if target, ok := filesByRepoPath[candidate]; ok {
+			return target, true
+		}
+	}
+
+	if project.Root != "." {
+		projectBase := filepath.ToSlash(filepath.Clean(filepath.Join(project.Root, importValue)))
+		for _, candidate := range importCandidates(projectBase) {
+			if target, ok := filesByRepoPath[candidate]; ok {
+				return target, true
+			}
+		}
+	}
+
+	return analyzedFile{}, false
+}
+
+func importCandidates(base string) []string {
+	base = filepath.ToSlash(base)
+	candidates := []string{base}
+	if ext := filepath.Ext(base); ext != "" {
+		return dedupe(candidates)
+	}
+
+	for ext := range languageByExt {
+		candidates = append(candidates, base+ext)
+		candidates = append(candidates, filepath.ToSlash(filepath.Join(base, "index"+ext)))
+		candidates = append(candidates, filepath.ToSlash(filepath.Join(base, "__init__"+ext)))
+	}
+	return dedupe(candidates)
+}
+
+func pruneDisconnectedNodes(nodes map[string]model.Node, edges map[string]model.Edge) {
+	if len(edges) == 0 {
+		return
+	}
+
+	connected := map[string]bool{}
+	for _, edge := range edges {
+		connected[edge.Source] = true
+		connected[edge.Target] = true
+	}
+
+	for id, node := range nodes {
+		if node.Changed || connected[id] {
+			continue
+		}
+		delete(nodes, id)
+	}
 }
 
 func mapValues(values map[string]model.Node) []model.Node {

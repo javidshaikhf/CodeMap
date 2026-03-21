@@ -28,6 +28,16 @@ func TestRunBuildsGraphsForMonorepo(t *testing.T) {
 	if result.Manifest.Projects[1].ChangedNodes == 0 {
 		t.Fatalf("expected changed nodes to be highlighted")
 	}
+	for _, graph := range result.Graphs {
+		for _, node := range graph.Nodes {
+			if node.Path == "frontend/package.json" || node.Path == "backend/go.mod" {
+				t.Fatalf("expected manifest files to be excluded from script graph, found %s", node.Path)
+			}
+			if node.Type == "directory" || node.Type == "symbol" {
+				t.Fatalf("expected only script/module nodes, found %s", node.Type)
+			}
+		}
+	}
 }
 
 func TestRunSupportsFallbackSingleProject(t *testing.T) {
