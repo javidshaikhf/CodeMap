@@ -51,8 +51,10 @@ It is intentionally focused on script and source-code connections, not every fil
 - Detects separate projects inside a repo from common manifests like `package.json`, `go.mod`, `Package.swift`, `Podfile`, `pyproject.toml`, `pom.xml`, `Cargo.toml`, `composer.json`, `pubspec.yaml`, `.csproj`, `.sln`, and more
 - Generates one graph per detected project instead of forcing the whole repository into a single unreadable map
 - Focuses on analyzable source files and scripts rather than assets, screenshots, images, or general repo files
-- Produces a language-agnostic dependency graph centered on script files and unresolved module references
-- Adds shallow relationship edges such as script-to-script `depends_on`, script-to-module dependencies, and cross-project links
+- Produces a language-agnostic dependency graph centered on script files only
+- Hides framework and package noise like `Foundation`, `React`, or other external modules that do not help explain repo-internal flow
+- Excludes test files by default so runtime/app flow stays clearer
+- Adds shallow relationship edges such as script-to-script `depends_on` and cross-project links
 - Highlights PR-touched files so reviewers can inspect the changed neighborhood first
 - Ships an interactive viewer with pan, zoom, drag, node selection, neighbor highlighting, and an inspector panel
 

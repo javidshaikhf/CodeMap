@@ -36,6 +36,7 @@ type fileParseResult struct {
 	language string
 	imports  []string
 	symbols  []string
+	refs     []string
 }
 
 type analyzedFile struct {
@@ -43,6 +44,8 @@ type analyzedFile struct {
 	repoRel    string
 	language   string
 	imports    []string
+	symbols    []string
+	refs       []string
 	changed    bool
 }
 
@@ -137,6 +140,13 @@ func buildProjectGraph(opts Options, project model.Project, changedSet map[strin
 		}
 	}
 
+	declaredBySymbol := make(map[string][]analyzedFile)
+	for _, file := range files {
+		for _, symbol := range file.symbols {
+			declaredBySymbol[symbol] = append(declaredBySymbol[symbol], file)
+		}
+	}
+
 	for _, file := range files {
 		fileNodeID := nodeID(project.ID, "file", file.repoRel)
 		for _, imp := range file.imports {
@@ -157,28 +167,6 @@ func buildProjectGraph(opts Options, project model.Project, changedSet map[strin
 				continue
 			}
 
-			moduleID := nodeID(project.ID, "module", imp)
-			nodes[moduleID] = model.Node{
-				ID:        moduleID,
-				Label:     imp,
-				Type:      model.NodeModule,
-				Language:  file.language,
-				Path:      imp,
-				ProjectID: project.ID,
-				Changed:   file.changed,
-			}
-			edges[edgeID(project.ID, fileNodeID, moduleID, model.EdgeDependsOn)] = model.Edge{
-				ID:        edgeID(project.ID, fileNodeID, moduleID, model.EdgeDependsOn),
-				Source:    fileNodeID,
-				Target:    moduleID,
-				Type:      model.EdgeDependsOn,
-				ProjectID: project.ID,
-				Changed:   file.changed,
-				Metadata: map[string]string{
-					"import": imp,
-					"kind":   "module",
-				},
-			}
 			if crossProject := findCrossProject(imp, project, allProjects); crossProject != nil {
 				edges[edgeID(project.ID, fileNodeID, crossProject.ID, model.EdgeCrossProject)] = model.Edge{
 					ID:           edgeID(project.ID, fileNodeID, crossProject.ID, model.EdgeCrossProject),
@@ -192,6 +180,34 @@ func buildProjectGraph(opts Options, project model.Project, changedSet map[strin
 						"import": imp,
 					},
 				}
+			}
+		}
+
+		for _, ref := range file.refs {
+			targets := declaredBySymbol[ref]
+			if len(targets) != 1 {
+				continue
+			}
+			target := targets[0]
+			if target.repoRel == file.repoRel {
+				continue
+			}
+			targetNodeID := nodeID(project.ID, "file", target.repoRel)
+			id := edgeID(project.ID, fileNodeID, targetNodeID, model.EdgeReferences)
+			if _, exists := edges[id]; exists {
+				continue
+			}
+			edges[id] = model.Edge{
+				ID:        id,
+				Source:    fileNodeID,
+				Target:    targetNodeID,
+				Type:      model.EdgeReferences,
+				ProjectID: project.ID,
+				Changed:   file.changed || target.changed,
+				Metadata: map[string]string{
+					"symbol": ref,
+					"kind":   "symbol",
+				},
 			}
 		}
 	}
@@ -232,6 +248,9 @@ func collectProjectFiles(opts Options, project model.Project, rootAbs string, ch
 		if !shouldInclude(relFromRepo, opts.Include, opts.Exclude, opts.Config.ExcludeGlobs) {
 			return nil
 		}
+		if isTestLikePath(relFromRepo) {
+			return nil
+		}
 
 		if _, ok := detectLanguage(relFromRepo); !ok {
 			return nil
@@ -257,6 +276,8 @@ func collectProjectFiles(opts Options, project model.Project, rootAbs string, ch
 			repoRel:    relFromRepo,
 			language:   parsed.language,
 			imports:    parsed.imports,
+			symbols:    parsed.symbols,
+			refs:       parsed.refs,
 			changed:    changedSet[relFromRepo],
 		})
 
@@ -282,6 +303,7 @@ func (heuristicParser) parse(project model.Project, relPath string, content []by
 		language: spec.name,
 		imports:  dedupe(imports),
 		symbols:  dedupe(symbols),
+		refs:     dedupe(parseRefs(text)),
 	}
 }
 
@@ -319,6 +341,11 @@ func parseSymbols(spec languageSpec, text string) []string {
 		}
 	}
 	return symbols
+}
+
+func parseRefs(text string) []string {
+	identifierPattern := regexp.MustCompile(`\b[A-Z_a-z][A-Z_a-z0-9_]*\b`)
+	return identifierPattern.FindAllString(text, -1)
 }
 
 func splitBlockImports(block string) []string {
@@ -437,6 +464,40 @@ func shouldInclude(path string, include, exclude, configExcludes []string) bool 
 	}
 
 	return true
+}
+
+func isTestLikePath(path string) bool {
+	path = filepath.ToSlash(strings.ToLower(path))
+	base := filepath.Base(path)
+
+	if strings.Contains(path, "/test/") || strings.Contains(path, "/tests/") || strings.Contains(path, "/__tests__/") {
+		return true
+	}
+
+	switch {
+	case strings.HasSuffix(base, "_test.go"):
+		return true
+	case strings.HasSuffix(base, "tests.swift"), strings.HasSuffix(base, "test.swift"):
+		return true
+	case strings.HasSuffix(base, "tests.java"), strings.HasSuffix(base, "test.java"):
+		return true
+	case strings.HasSuffix(base, "tests.kt"), strings.HasSuffix(base, "test.kt"):
+		return true
+	case strings.HasSuffix(base, "tests.cs"), strings.HasSuffix(base, "test.cs"):
+		return true
+	case strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py"):
+		return true
+	case strings.HasSuffix(base, "_test.py"):
+		return true
+	case strings.HasSuffix(base, ".test.ts"), strings.HasSuffix(base, ".spec.ts"), strings.HasSuffix(base, ".test.tsx"), strings.HasSuffix(base, ".spec.tsx"):
+		return true
+	case strings.HasSuffix(base, ".test.js"), strings.HasSuffix(base, ".spec.js"), strings.HasSuffix(base, ".test.jsx"), strings.HasSuffix(base, ".spec.jsx"):
+		return true
+	case strings.HasSuffix(base, "test.php"), strings.HasSuffix(base, "tests.php"):
+		return true
+	default:
+		return false
+	}
 }
 
 func findCrossProject(importValue string, current model.Project, projects []model.Project) *model.Project {

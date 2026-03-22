@@ -11,6 +11,11 @@ const state = {
   layoutByProject: {},
   globalEventsBound: false,
   focus: { target: null, start: 0, end: 0 },
+  lastFittedSignature: "",
+  canvasSize: { width: 960, height: 560 },
+  pendingFitFrame: 0,
+  fitScale: 1,
+  minimapCollapsed: true,
 };
 
 const NODE_HEIGHT = 84;
@@ -45,7 +50,10 @@ function ensureLayout(graph) {
   }
   const projectID = graph.project.id;
   const existing = state.layoutByProject[projectID] || {};
-  const base = layoutNodes(graph.nodes.slice(0, 36));
+  const canvasNodes = graph.nodes;
+  const nodeSet = new Set(canvasNodes.map((node) => node.id));
+  const canvasEdges = graph.edges.filter((edge) => nodeSet.has(edge.source) && nodeSet.has(edge.target));
+  const base = layoutNodes(canvasNodes, canvasEdges);
   const merged = { ...base };
   Object.keys(existing).forEach((nodeID) => {
     merged[nodeID] = { ...merged[nodeID], ...existing[nodeID] };
@@ -168,17 +176,23 @@ function renderGraphPanel(graph, layout) {
     return `<main class="graph-panel panel empty-state">No graph available for the selected filters.</main>`;
   }
 
-  const canvasNodes = graph.nodes.slice(0, 36);
+  const canvasNodes = graph.nodes;
   const positions = layout;
   const nodeIndex = Object.fromEntries(canvasNodes.map((node) => [node.id, node]));
-  const edges = graph.edges.filter((edge) => nodeIndex[edge.source] && nodeIndex[edge.target]).slice(0, 80);
+  const edges = graph.edges.filter((edge) => nodeIndex[edge.source] && nodeIndex[edge.target]);
   const changedCount = graph.nodes.filter((node) => node.changed).length;
   const world = getWorldBounds(canvasNodes, positions);
   const highlight = getHighlightState(canvasNodes, edges, state.selectedNode);
+  const minimap = renderMinimap(canvasNodes, edges, positions, world);
 
-  const edgeLines = edges.map((edge) => {
+  const edgeLines = edges.map((edge, index) => {
     const source = positions[edge.source];
     const target = positions[edge.target];
+    const reverseExists = edges.some((candidate, candidateIndex) =>
+      candidateIndex !== index &&
+      candidate.source === edge.target &&
+      candidate.target === edge.source
+    );
     const classes = [
       "graph-edge",
       highlight.edgeIDs.has(edge.id) ? "is-highlighted" : "",
@@ -187,7 +201,9 @@ function renderGraphPanel(graph, layout) {
     ].filter(Boolean).join(" ");
     const stroke = edge.changed ? "rgba(194, 65, 12, 0.55)" : "rgba(15, 118, 110, 0.24)";
     const strokeWidth = highlight.edgeIDs.has(edge.id) ? 3.4 : (edge.changed ? 2.5 : 1.6);
-    return `<line class="${classes}" x1="${source.x + source.width / 2}" y1="${source.y + NODE_HEIGHT / 2}" x2="${target.x + target.width / 2}" y2="${target.y + NODE_HEIGHT / 2}" stroke="${stroke}" stroke-width="${strokeWidth}" />`;
+    const markerID = getMarkerID(edge, highlight.edgeIDs.has(edge.id), highlight.hasSelection && !highlight.edgeIDs.has(edge.id));
+    const path = describeEdgePath(source, target, reverseExists ? edge.source < edge.target : false, reverseExists);
+    return `<path class="${classes}" d="${path}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="none" marker-end="url(#${markerID})" />`;
   }).join("");
 
   const nodeButtons = canvasNodes.map((node) => `
@@ -217,12 +233,16 @@ function renderGraphPanel(graph, layout) {
         </div>
       </div>
       <div class="graph-stage">
-        <div class="graph-toolbar meta">Scroll to zoom, drag the background to pan, and drag nodes to rearrange the map.</div>
+        <div class="graph-toolbar meta">Top-to-bottom layout is based on likely root scripts. Scroll to zoom, drag the background to pan, and drag nodes to rearrange the map.</div>
         <div class="canvas${state.viewport.isPanning ? " is-panning" : ""}" id="graph-canvas">
           <div class="viewport" id="graph-viewport" style="width:${world.width}px; height:${world.height}px; transform: translate(${state.viewport.offsetX}px, ${state.viewport.offsetY}px) scale(${state.viewport.scale});">
-            <svg class="edge-layer" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" preserveAspectRatio="none">${edgeLines}</svg>
+            <svg class="edge-layer" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" preserveAspectRatio="none">
+              ${renderEdgeDefs()}
+              ${edgeLines}
+            </svg>
             <div class="node-layer" style="width:${world.width}px; height:${world.height}px;">${nodeButtons}</div>
           </div>
+          ${minimap}
         </div>
       </div>
     </main>
@@ -305,6 +325,17 @@ function bindEvents(filteredGraph, layout) {
     });
   }
 
+  const minimapToggle = document.getElementById("minimap-toggle");
+  if (minimapToggle) {
+    minimapToggle.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    minimapToggle.addEventListener("click", () => {
+      state.minimapCollapsed = !state.minimapCollapsed;
+      render();
+    });
+  }
+
   document.querySelectorAll("[data-project-id]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedProject = button.getAttribute("data-project-id");
@@ -332,23 +363,28 @@ function bindEvents(filteredGraph, layout) {
 
   const canvas = document.getElementById("graph-canvas");
   if (canvas) {
+    const rect = canvas.getBoundingClientRect();
+    state.canvasSize = { width: rect.width, height: rect.height };
     canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const pointerX = event.clientX - rect.left;
-      const pointerY = event.clientY - rect.top;
+      const liveRect = canvas.getBoundingClientRect();
+      state.canvasSize = { width: liveRect.width, height: liveRect.height };
+      const pointerX = event.clientX - liveRect.left;
+      const pointerY = event.clientY - liveRect.top;
       const worldX = (pointerX - state.viewport.offsetX) / state.viewport.scale;
       const worldY = (pointerY - state.viewport.offsetY) / state.viewport.scale;
-      const delta = event.deltaY < 0 ? 0.1 : -0.1;
-      const nextScale = clamp(state.viewport.scale + delta, 0.45, 2.2);
-      state.viewport.offsetX = pointerX - worldX * nextScale;
-      state.viewport.offsetY = pointerY - worldY * nextScale;
+      const delta = event.deltaY < 0 ? 0.06 : -0.06;
+      const minScale = clamp(state.fitScale || 0.02, 0.02, 1.4);
+      const nextScale = clamp(state.viewport.scale + delta, minScale, 2.2);
+      const nextOffsetX = pointerX - worldX * nextScale;
+      const nextOffsetY = pointerY - worldY * nextScale;
       state.viewport.scale = nextScale;
+      constrainViewport(filteredGraph, layout, nextOffsetX, nextOffsetY);
       render();
     }, { passive: false });
 
     canvas.addEventListener("pointerdown", (event) => {
-      if (event.target.closest("[data-node-id]")) {
+      if (event.target.closest("[data-node-id]") || event.target.closest(".minimap")) {
         return;
       }
       state.viewport.isPanning = true;
@@ -366,6 +402,7 @@ function bindEvents(filteredGraph, layout) {
   }
 
   bindGlobalEventsOnce();
+  requestFitViewport(filteredGraph);
 
   if (filteredGraph && state.selectedNode && !filteredGraph.nodes.find((node) => node.id === state.selectedNode)) {
     state.selectedNode = null;
@@ -386,8 +423,14 @@ function handlePointerMove(event) {
       return;
     }
     state.pointer.moved = true;
-    state.viewport.offsetX = state.pointer.originX + deltaX;
-    state.viewport.offsetY = state.pointer.originY + deltaY;
+    const graph = getFilteredGraph();
+    const layout = graph ? ensureLayout(graph) : {};
+    const canvas = document.getElementById("graph-canvas");
+    const rect = canvas ? canvas.getBoundingClientRect() : state.canvasSize;
+    constrainViewport(graph, layout, state.pointer.originX + deltaX, state.pointer.originY + deltaY, {
+      overscrollX: rect.width * 0.35,
+      overscrollY: rect.height * 0.35,
+    });
     render();
     return;
   }
@@ -447,6 +490,10 @@ function bindGlobalEventsOnce() {
   document.addEventListener("pointermove", handlePointerMove);
   document.addEventListener("pointerup", handlePointerUp);
   document.addEventListener("pointercancel", handlePointerUp);
+  window.addEventListener("resize", () => {
+    state.lastFittedSignature = "";
+    requestFitViewport(getFilteredGraph());
+  });
   state.globalEventsBound = true;
 }
 
@@ -468,22 +515,140 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function layoutNodes(nodes) {
-  const columns = 4;
-  const cardWidth = 210;
-  const cardHeight = 110;
+function layoutNodes(nodes, edges) {
   const positions = {};
-  nodes.forEach((node, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const width = getNodeWidth(node);
-    positions[node.id] = {
-      x: 36 + column * cardWidth + (row % 2 === 0 ? 0 : 36),
-      y: 36 + row * cardHeight,
-      width,
-    };
+  const widths = {};
+  const indegree = {};
+  const adjacency = {};
+  const nodeByID = {};
+
+  nodes.forEach((node) => {
+    nodeByID[node.id] = node;
+    widths[node.id] = getNodeWidth(node);
+    indegree[node.id] = 0;
+    adjacency[node.id] = [];
   });
+
+  edges.forEach((edge) => {
+    if (!nodeByID[edge.source] || !nodeByID[edge.target]) {
+      return;
+    }
+    adjacency[edge.source].push(edge.target);
+    indegree[edge.target] += 1;
+  });
+
+  const layers = assignLayers(nodes, adjacency, indegree);
+  const grouped = {};
+  nodes.forEach((node) => {
+    const layer = layers[node.id] || 0;
+    if (!grouped[layer]) {
+      grouped[layer] = [];
+    }
+    grouped[layer].push(node);
+  });
+
+  const layerGap = 150;
+  const columnGap = 40;
+  const topPadding = 40;
+  const horizontalPadding = 60;
+  const orderedLayers = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+
+  orderedLayers.forEach((layerIndex) => {
+    const layerNodes = grouped[layerIndex].sort((left, right) => {
+      const leftOut = adjacency[left.id].length;
+      const rightOut = adjacency[right.id].length;
+      if (leftOut !== rightOut) {
+        return rightOut - leftOut;
+      }
+      return left.label.localeCompare(right.label);
+    });
+
+    const totalWidth = layerNodes.reduce((sum, node) => sum + widths[node.id], 0) + Math.max(0, layerNodes.length - 1) * columnGap;
+    let x = Math.max(horizontalPadding, (960 - totalWidth) / 2);
+    const y = topPadding + layerIndex * layerGap;
+
+    layerNodes.forEach((node) => {
+      positions[node.id] = {
+        x,
+        y,
+        width: widths[node.id],
+      };
+      x += widths[node.id] + columnGap;
+    });
+  });
+
   return positions;
+}
+
+function assignLayers(nodes, adjacency, indegree) {
+  const nodeSet = new Set(nodes.map((node) => node.id));
+  const remaining = new Set(nodeSet);
+  const layers = {};
+
+  while (remaining.size > 0) {
+    const roots = pickLayerRoots(remaining, indegree, adjacency);
+    const queue = roots.slice();
+
+    roots.forEach((root) => {
+      if (layers[root] === undefined) {
+        layers[root] = 0;
+      }
+    });
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      remaining.delete(current);
+      (adjacency[current] || []).forEach((next) => {
+        if (!nodeSet.has(next)) {
+          return;
+        }
+        const nextLayer = (layers[current] || 0) + 1;
+        if (layers[next] === undefined || layers[next] < nextLayer) {
+          layers[next] = nextLayer;
+        }
+        if (remaining.has(next) && !queue.includes(next)) {
+          queue.push(next);
+        }
+      });
+    }
+
+    if (roots.length === 0) {
+      break;
+    }
+  }
+
+  let maxAssigned = 0;
+  Object.values(layers).forEach((layer) => {
+    maxAssigned = Math.max(maxAssigned, layer);
+  });
+
+  nodes.forEach((node) => {
+    if (layers[node.id] === undefined) {
+      maxAssigned += 1;
+      layers[node.id] = maxAssigned;
+    }
+  });
+
+  return layers;
+}
+
+function pickLayerRoots(remaining, indegree, adjacency) {
+  const candidates = [...remaining].filter((nodeID) => indegree[nodeID] === 0);
+  const roots = (candidates.length > 0 ? candidates : [...remaining]).sort((left, right) => {
+    const leftIn = indegree[left] || 0;
+    const rightIn = indegree[right] || 0;
+    if (leftIn !== rightIn) {
+      return leftIn - rightIn;
+    }
+    const leftOut = (adjacency[left] || []).length;
+    const rightOut = (adjacency[right] || []).length;
+    if (leftOut !== rightOut) {
+      return rightOut - leftOut;
+    }
+    return left.localeCompare(right);
+  });
+
+  return roots.slice(0, Math.max(1, Math.min(3, roots.length)));
 }
 
 function getWorldBounds(nodes, positions) {
@@ -540,6 +705,196 @@ function getHighlightState(nodes, edges, selectedNodeID) {
   });
 
   return state;
+}
+
+function describeEdgePath(source, target, invertCurve, curved) {
+  const startX = source.x + source.width / 2;
+  const startY = source.y + NODE_HEIGHT / 2;
+  const endX = target.x + target.width / 2;
+  const endY = target.y + NODE_HEIGHT / 2;
+  if (!curved) {
+    return `M ${startX} ${startY} L ${endX} ${endY}`;
+  }
+  const midX = (startX + endX) / 2;
+  const midY = (startY + endY) / 2;
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+  const normalX = (-dy / length) * (invertCurve ? -34 : 34);
+  const normalY = (dx / length) * (invertCurve ? -34 : 34);
+  return `M ${startX} ${startY} Q ${midX + normalX} ${midY + normalY} ${endX} ${endY}`;
+}
+
+function renderEdgeDefs() {
+  return `
+    <defs>
+      <marker id="arrow-default" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(15, 118, 110, 0.35)" />
+      </marker>
+      <marker id="arrow-highlight" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(15, 118, 110, 0.92)" />
+      </marker>
+      <marker id="arrow-changed" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(194, 65, 12, 0.92)" />
+      </marker>
+      <marker id="arrow-dimmed" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(15, 118, 110, 0.14)" />
+      </marker>
+    </defs>
+  `;
+}
+
+function getMarkerID(edge, highlighted, dimmed) {
+  if (highlighted && edge.changed) {
+    return "arrow-changed";
+  }
+  if (highlighted) {
+    return "arrow-highlight";
+  }
+  if (dimmed) {
+    return "arrow-dimmed";
+  }
+  return edge.changed ? "arrow-changed" : "arrow-default";
+}
+
+function maybeFitViewport(graph, layout) {
+  if (!graph) {
+    return;
+  }
+  const world = getWorldBounds(graph.nodes, layout);
+  const canvas = document.getElementById("graph-canvas");
+  if (!canvas) {
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const signature = [
+    graph.project.id,
+    graph.nodes.length,
+    graph.edges.length,
+    state.query,
+    state.showChangedOnly,
+    Math.round(rect.width),
+    Math.round(rect.height),
+    Math.round(world.width),
+    Math.round(world.height),
+  ].join(":");
+  if (state.lastFittedSignature === signature) {
+    return;
+  }
+  const padding = 40;
+  const availableWidth = Math.max(120, rect.width - padding * 2);
+  const availableHeight = Math.max(120, rect.height - padding * 2);
+  const scaleX = availableWidth / world.width;
+  const scaleY = availableHeight / world.height;
+  const scale = clamp(Math.min(scaleX, scaleY, 1), 0.02, 1.4);
+  state.fitScale = scale;
+  state.viewport.scale = scale;
+  constrainViewport(graph, layout, Math.round((rect.width - world.width * scale) / 2), Math.round((rect.height - world.height * scale) / 2));
+  state.lastFittedSignature = signature;
+  render();
+}
+
+function requestFitViewport(graph) {
+  if (!graph) {
+    return;
+  }
+  if (state.pendingFitFrame) {
+    cancelAnimationFrame(state.pendingFitFrame);
+  }
+  state.pendingFitFrame = requestAnimationFrame(() => {
+    state.pendingFitFrame = 0;
+    const liveGraph = getFilteredGraph();
+    if (!liveGraph || liveGraph.project.id !== graph.project.id) {
+      return;
+    }
+    maybeFitViewport(liveGraph, ensureLayout(liveGraph));
+  });
+}
+
+function constrainViewport(graph, layout, desiredOffsetX, desiredOffsetY, options) {
+  const opts = options || {};
+  if (!graph) {
+    state.viewport.offsetX = desiredOffsetX;
+    state.viewport.offsetY = desiredOffsetY;
+    return;
+  }
+  const canvas = document.getElementById("graph-canvas");
+  const rect = canvas ? canvas.getBoundingClientRect() : state.canvasSize;
+  const world = getWorldBounds(graph.nodes, layout);
+  const scaledWidth = world.width * state.viewport.scale;
+  const scaledHeight = world.height * state.viewport.scale;
+  const overscrollX = opts.overscrollX || 0;
+  const overscrollY = opts.overscrollY || 0;
+  const centeredOffsetX = Math.round((rect.width - scaledWidth) / 2);
+  const centeredOffsetY = Math.round((rect.height - scaledHeight) / 2);
+
+  if (scaledWidth <= rect.width) {
+    state.viewport.offsetX = clamp(
+      desiredOffsetX,
+      centeredOffsetX - overscrollX,
+      centeredOffsetX + overscrollX
+    );
+  } else {
+    state.viewport.offsetX = clamp(
+      desiredOffsetX,
+      rect.width - scaledWidth - overscrollX,
+      overscrollX
+    );
+  }
+
+  if (scaledHeight <= rect.height) {
+    state.viewport.offsetY = clamp(
+      desiredOffsetY,
+      centeredOffsetY - overscrollY,
+      centeredOffsetY + overscrollY
+    );
+  } else {
+    state.viewport.offsetY = clamp(
+      desiredOffsetY,
+      rect.height - scaledHeight - overscrollY,
+      overscrollY
+    );
+  }
+}
+
+function renderMinimap(nodes, edges, positions, world) {
+  const miniWidth = 220;
+  const miniHeight = 140;
+  const scaleX = miniWidth / Math.max(1, world.width);
+  const scaleY = miniHeight / Math.max(1, world.height);
+  const viewportWidth = state.canvasSize.width / state.viewport.scale;
+  const viewportHeight = state.canvasSize.height / state.viewport.scale;
+  const viewX = Math.max(0, -state.viewport.offsetX / state.viewport.scale);
+  const viewY = Math.max(0, -state.viewport.offsetY / state.viewport.scale);
+
+  const miniNodes = nodes.map((node) => {
+    const position = positions[node.id];
+    return `<rect x="${position.x * scaleX}" y="${position.y * scaleY}" width="${Math.max(8, position.width * scaleX)}" height="${Math.max(7, NODE_HEIGHT * scaleY)}" rx="3" class="minimap-node${node.id === state.selectedNode ? " selected" : ""}" />`;
+  }).join("");
+
+  if (state.minimapCollapsed) {
+    return `
+      <div class="minimap is-collapsed">
+        <button type="button" class="minimap-toggle" id="minimap-toggle" aria-label="Expand minimap" title="Expand minimap">◱</button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="minimap">
+      <button type="button" class="minimap-toggle" id="minimap-toggle" aria-label="Minimize minimap" title="Minimize minimap">◲</button>
+      <svg width="${miniWidth}" height="${miniHeight}" viewBox="0 0 ${miniWidth} ${miniHeight}">
+        ${miniNodes}
+        <rect
+          x="${viewX * scaleX}"
+          y="${viewY * scaleY}"
+          width="${Math.min(miniWidth, viewportWidth * scaleX)}"
+          height="${Math.min(miniHeight, viewportHeight * scaleY)}"
+          class="minimap-viewport"
+        />
+      </svg>
+    </div>
+  `;
 }
 
 render();

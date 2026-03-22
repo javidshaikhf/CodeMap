@@ -237,6 +237,88 @@ body {
   stroke: rgba(194, 65, 12, 0.95);
 }
 
+.minimap {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 236px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(22, 48, 43, 0.14);
+  background: rgba(255, 250, 240, 0.92);
+  box-shadow: 0 16px 34px rgba(22, 48, 43, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.minimap.is-collapsed {
+  width: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.minimap-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 48, 43, 0.14);
+  background: rgba(255, 250, 240, 0.96);
+  color: var(--ink);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(22, 48, 43, 0.14);
+}
+
+.minimap-toggle:hover {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.minimap:not(.is-collapsed) .minimap-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  box-shadow: none;
+}
+
+.minimap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: rgba(15, 118, 110, 0.04);
+}
+
+.minimap-edge {
+  fill: none;
+  stroke: rgba(22, 48, 43, 0.22);
+  stroke-width: 1.2;
+}
+
+.minimap-node {
+  fill: rgba(15, 118, 110, 0.34);
+}
+
+.minimap-node.selected {
+  fill: rgba(194, 65, 12, 0.7);
+}
+
+.minimap-viewport {
+  fill: rgba(15, 118, 110, 0.1);
+  stroke: rgba(15, 118, 110, 0.78);
+  stroke-width: 1.5;
+}
+
 .node {
   position: absolute;
   min-width: 140px;

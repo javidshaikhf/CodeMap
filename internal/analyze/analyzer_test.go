@@ -33,8 +33,8 @@ func TestRunBuildsGraphsForMonorepo(t *testing.T) {
 			if node.Path == "frontend/package.json" || node.Path == "backend/go.mod" {
 				t.Fatalf("expected manifest files to be excluded from script graph, found %s", node.Path)
 			}
-			if node.Type == "directory" || node.Type == "symbol" {
-				t.Fatalf("expected only script/module nodes, found %s", node.Type)
+			if node.Type == "directory" || node.Type == "symbol" || node.Type == "module" {
+				t.Fatalf("expected only script nodes, found %s", node.Type)
 			}
 		}
 	}
@@ -54,7 +54,13 @@ func TestRunSupportsFallbackSingleProject(t *testing.T) {
 	if result.Manifest.ProjectCount != 1 {
 		t.Fatalf("expected 1 project, got %d", result.Manifest.ProjectCount)
 	}
-	if len(result.Graphs[0].Nodes) == 0 || len(result.Graphs[0].Edges) == 0 {
-		t.Fatalf("expected graph nodes and edges to be generated")
+	if len(result.Graphs) != 1 {
+		t.Fatalf("expected 1 graph, got %d", len(result.Graphs))
+	}
+	if len(result.Graphs[0].Nodes) == 0 {
+		t.Fatalf("expected script nodes to be generated")
+	}
+	if len(result.Graphs[0].Edges) == 0 {
+		t.Fatalf("expected repo-internal symbol reference edges to be generated")
 	}
 }
