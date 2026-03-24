@@ -1,7 +1,7 @@
 :root {
   --bg: #f4efe3;
-  --panel: rgba(255, 252, 246, 0.92);
-  --panel-strong: #fffaf0;
+  --panel: rgba(255, 252, 246, 0.74);
+  --panel-strong: rgba(255, 250, 240, 0.84);
   --ink: #16302b;
   --muted: #5d756f;
   --accent: #0f766e;
@@ -122,6 +122,10 @@ body {
   margin-top: 16px;
 }
 
+.details .detail-block + .detail-block {
+  margin-top: 12px;
+}
+
 .filter-chip,
 .project-card,
 .detail-block,
@@ -159,9 +163,27 @@ body {
 
 .drawer-header {
   display: flex;
-  align-items: start;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding-bottom: 0;
+}
+
+.drawer-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.drawer-title h1 {
+  padding-bottom: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.drawer-header .eyebrow {
+  margin-bottom: 6px;
+  line-height: 1;
 }
 
 .drawer-copy {
@@ -175,28 +197,41 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  gap: 10px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: rgba(255, 250, 240, 0.96);
   color: var(--ink);
   cursor: pointer;
   font: inherit;
   box-shadow: 0 10px 24px rgba(22, 48, 43, 0.14);
+  padding: 10px 12px;
 }
 
 .drawer-close {
-  width: 34px;
-  height: 34px;
-  font-size: 18px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  color: var(--muted);
+  line-height: 1;
+  align-self: flex-start;
+  margin-top: 0;
+  display: block;
+  flex: 0 0 auto;
 }
 
 .drawer-toggle {
   position: absolute;
   top: 18px;
   z-index: 6;
-  width: 42px;
-  height: 42px;
-  font-size: 20px;
+  min-height: 42px;
+  max-width: 220px;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .drawer-toggle-left {
@@ -210,15 +245,45 @@ body {
 .drawer-toggle:hover,
 .drawer-close:hover {
   border-color: rgba(15, 118, 110, 0.34);
-  background: rgba(255, 255, 255, 0.98);
 }
 
-.drawer-toggle-left.is-open {
-  left: 372px;
+.drawer-close:hover {
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
 }
 
-.drawer-toggle-right.is-open {
-  right: 372px;
+.drawer-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: rgba(15, 118, 110, 0.9);
+  flex: 0 0 auto;
+}
+
+.drawer-toggle-svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.drawer-toggle-label {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.drawer-toggle-right .drawer-toggle-label {
+  max-width: 84px;
 }
 
 .graph-panel {
@@ -234,9 +299,10 @@ body {
   overflow: hidden;
   cursor: grab;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(248, 242, 231, 0.75)),
-    repeating-linear-gradient(90deg, transparent, transparent 38px, rgba(22, 48, 43, 0.03) 38px, rgba(22, 48, 43, 0.03) 39px),
-    repeating-linear-gradient(0deg, transparent, transparent 38px, rgba(22, 48, 43, 0.03) 38px, rgba(22, 48, 43, 0.03) 39px);
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.14) 1.1px, transparent 0),
+    linear-gradient(180deg, #111315, #050607);
+  background-size: 24px 24px, 100% 100%;
+  background-position: 0 0, 0 0;
 }
 
 .workspace-stats {
@@ -248,7 +314,8 @@ body {
   gap: 14px;
   align-items: center;
   font-size: 13px;
-  text-shadow: 0 1px 0 rgba(255, 252, 246, 0.7);
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.38);
 }
 
 .canvas.is-panning {

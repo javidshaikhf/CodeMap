@@ -18,6 +18,7 @@ const state = {
   minimapCollapsed: true,
   sidebarCollapsed: true,
   detailsCollapsed: true,
+  userAdjustedViewport: false,
 };
 
 const NODE_HEIGHT = 84;
@@ -25,6 +26,27 @@ const DRAG_THRESHOLD = 6;
 const NODE_MIN_WIDTH = 140;
 const NODE_MAX_WIDTH = 280;
 const NODE_HORIZONTAL_PADDING = 28;
+const DRAWER_WIDTH = 340;
+const DRAWER_EDGE_GAP = 16;
+const DRAWER_SAFE_INSET_RATIO = 0.5;
+const FLOATING_CONTROL_MARGIN = 18;
+const RIGHT_CONTROL_GAP_REDUCTION_RATIO = 0.5;
+
+function getDrawerFootprint() {
+  return DRAWER_WIDTH + DRAWER_EDGE_GAP * 2;
+}
+
+function getRightControlInset() {
+  const defaultInset = getDrawerFootprint();
+  const extraGap = FLOATING_CONTROL_MARGIN + DRAWER_EDGE_GAP;
+  return Math.round(defaultInset - extraGap * RIGHT_CONTROL_GAP_REDUCTION_RATIO);
+}
+
+function getLeftControlInset() {
+  const defaultInset = getDrawerFootprint();
+  const extraGap = FLOATING_CONTROL_MARGIN + DRAWER_EDGE_GAP;
+  return Math.round(defaultInset - extraGap * RIGHT_CONTROL_GAP_REDUCTION_RATIO);
+}
 
 if (state.manifest && state.manifest.projects && state.manifest.projects[0]) {
   state.selectedProject = state.manifest.projects[0].id;
@@ -105,6 +127,63 @@ function getConnections(filteredGraph, node) {
   };
 }
 
+function getWorkspaceInsets() {
+  const drawerFootprint = getDrawerFootprint();
+  const safeInset = Math.round(drawerFootprint * DRAWER_SAFE_INSET_RATIO);
+  return {
+    left: state.sidebarCollapsed ? 0 : safeInset,
+    right: state.detailsCollapsed ? 0 : safeInset,
+    top: 0,
+    bottom: 0,
+  };
+}
+
+function renderProjectPanelIcon(side) {
+  if (side === "right") {
+    return `
+      <svg viewBox="0 0 20 20" aria-hidden="true" class="drawer-toggle-svg">
+        <rect x="2.5" y="3" width="15" height="14" rx="3"></rect>
+        <path d="M13 3.5v13"></path>
+        <path d="M5.5 7h5"></path>
+        <path d="M5.5 10h5"></path>
+        <path d="M5.5 13h3.5"></path>
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 20 20" aria-hidden="true" class="drawer-toggle-svg">
+      <rect x="2.5" y="3" width="15" height="14" rx="3"></rect>
+      <path d="M7 3.5v13"></path>
+      <path d="M9.5 7h5"></path>
+      <path d="M9.5 10h5"></path>
+      <path d="M9.5 13h3.5"></path>
+    </svg>
+  `;
+}
+
+function renderInspectorPanelIcon(side) {
+  if (side === "left") {
+    return `
+      <svg viewBox="0 0 20 20" aria-hidden="true" class="drawer-toggle-svg">
+        <rect x="2.5" y="3" width="15" height="14" rx="3"></rect>
+        <path d="M7 3.5v13"></path>
+        <circle cx="12.5" cy="7.5" r="1.6"></circle>
+        <path d="M10.5 12h4"></path>
+        <path d="M10.5 14.5h3"></path>
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 20 20" aria-hidden="true" class="drawer-toggle-svg">
+      <rect x="2.5" y="3" width="15" height="14" rx="3"></rect>
+      <path d="M13 3.5v13"></path>
+      <circle cx="7.5" cy="7.5" r="1.6"></circle>
+      <path d="M5.5 12h4"></path>
+      <path d="M5.5 14.5h3"></path>
+    </svg>
+  `;
+}
+
 function render() {
   const root = document.getElementById("root");
   if (!state.manifest) {
@@ -148,13 +227,11 @@ function renderSidebar() {
   return `
     <aside class="sidebar panel${state.sidebarCollapsed ? " is-collapsed" : ""}">
       <div class="drawer-header">
-        <div>
-          <div class="eyebrow">Codemap</div>
-          <h1>Projects</h1>
+        <div class="drawer-title">
+          <div class="eyebrow">Project</div>
         </div>
-        <button type="button" class="drawer-close" id="sidebar-close" aria-label="Collapse project panel">◂</button>
+        <button type="button" class="drawer-close" id="sidebar-close" aria-label="Close project panel">${renderProjectPanelIcon("right")}</button>
       </div>
-      <p class="drawer-copy">Open a project, filter by path or node type, and inspect changed relationships directly from the PR artifact.</p>
       <input class="search" id="search-input" value="${escapeHTML(state.query)}" placeholder="Search files, modules, classes" />
       <div class="filters">
         <label class="filter-chip">
@@ -164,14 +241,6 @@ function renderSidebar() {
       </div>
       <div class="summary">${manifest.projectCount} projects detected • ${manifest.graphCount} graphs generated</div>
       <div class="project-list">${projects}</div>
-      <div class="legend">
-        <div class="legend-item detail-block">
-          <div class="detail-title">Node types</div>
-          <div class="pill-row">
-            ${["project", "directory", "file", "module", "symbol"].map((item) => `<span class="pill">${item}</span>`).join("")}
-          </div>
-        </div>
-      </div>
     </aside>
   `;
 }
@@ -188,7 +257,12 @@ function renderGraphPanel(graph, layout) {
   const changedCount = graph.nodes.filter((node) => node.changed).length;
   const world = getWorldBounds(canvasNodes, positions);
   const highlight = getHighlightState(canvasNodes, edges, state.selectedNode);
-  const minimap = renderMinimap(canvasNodes, edges, positions, world);
+  const insets = getWorkspaceInsets();
+  const controlInsets = {
+    left: state.sidebarCollapsed ? 0 : getLeftControlInset(),
+    right: state.detailsCollapsed ? 0 : getRightControlInset(),
+  };
+  const minimap = renderMinimap(canvasNodes, edges, positions, world, insets, controlInsets);
 
   const edgeLines = edges.map((edge, index) => {
     const source = positions[edge.source];
@@ -204,8 +278,8 @@ function renderGraphPanel(graph, layout) {
       highlight.hasSelection && !highlight.edgeIDs.has(edge.id) ? "is-dimmed" : "",
       edge.changed ? "changed" : "",
     ].filter(Boolean).join(" ");
-    const stroke = edge.changed ? "rgba(194, 65, 12, 0.55)" : "rgba(15, 118, 110, 0.24)";
-    const strokeWidth = highlight.edgeIDs.has(edge.id) ? 3.4 : (edge.changed ? 2.5 : 1.6);
+    const stroke = edge.changed ? "rgba(251, 146, 60, 0.92)" : "rgba(255, 255, 255, 0.62)";
+    const strokeWidth = highlight.edgeIDs.has(edge.id) ? 3.6 : (edge.changed ? 2.7 : 1.8);
     const markerID = getMarkerID(edge, highlight.edgeIDs.has(edge.id), highlight.hasSelection && !highlight.edgeIDs.has(edge.id));
     const path = describeEdgePath(source, target, reverseExists ? edge.source < edge.target : false, reverseExists);
     return `<path class="${classes}" d="${path}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="none" marker-end="url(#${markerID})" />`;
@@ -225,12 +299,18 @@ function renderGraphPanel(graph, layout) {
 
   return `
     <main class="graph-panel">
-      <button type="button" class="drawer-toggle drawer-toggle-left${state.sidebarCollapsed ? "" : " is-open"}" id="sidebar-toggle" aria-label="${state.sidebarCollapsed ? "Open project panel" : "Close project panel"}">
-        ${state.sidebarCollapsed ? "▸" : "◂"}
-      </button>
-      <button type="button" class="drawer-toggle drawer-toggle-right${state.detailsCollapsed ? "" : " is-open"}" id="details-toggle" aria-label="${state.detailsCollapsed ? "Open inspector panel" : "Close inspector panel"}">
-        ${state.detailsCollapsed ? "◂" : "▸"}
-      </button>
+      ${state.sidebarCollapsed ? `
+        <button type="button" class="drawer-toggle drawer-toggle-left" id="sidebar-toggle" aria-label="Open project panel">
+          <span class="drawer-toggle-icon">${renderProjectPanelIcon("left")}</span>
+          <span class="drawer-toggle-label">${escapeHTML(graph.project.name)}</span>
+        </button>
+      ` : ""}
+      ${state.detailsCollapsed ? `
+        <button type="button" class="drawer-toggle drawer-toggle-right" id="details-toggle" aria-label="Open inspector panel">
+          <span class="drawer-toggle-icon">${renderInspectorPanelIcon("right")}</span>
+          <span class="drawer-toggle-label">Inspector</span>
+        </button>
+      ` : ""}
       <div class="canvas${state.viewport.isPanning ? " is-panning" : ""}" id="graph-canvas">
         <div class="viewport" id="graph-viewport" style="width:${world.width}px; height:${world.height}px; transform: translate(${state.viewport.offsetX}px, ${state.viewport.offsetY}px) scale(${state.viewport.scale});">
           <svg class="edge-layer" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" preserveAspectRatio="none">
@@ -239,7 +319,7 @@ function renderGraphPanel(graph, layout) {
           </svg>
           <div class="node-layer" style="width:${world.width}px; height:${world.height}px;">${nodeButtons}</div>
         </div>
-        <div class="workspace-stats meta">
+        <div class="workspace-stats meta" style="left:${18 + controlInsets.left}px;">
           <span>${graph.nodes.length} nodes</span>
           <span>${graph.edges.length} edges</span>
           <span>${changedCount} changed</span>
@@ -254,11 +334,11 @@ function renderDetailsPanel(node, connections) {
   return `
     <aside class="details panel${state.detailsCollapsed ? " is-collapsed" : ""}">
       <div class="drawer-header">
-        <div>
+        <div class="drawer-title">
           <div class="eyebrow">Inspector</div>
           <h1>${escapeHTML(node ? node.label : "Select a node")}</h1>
         </div>
-        <button type="button" class="drawer-close" id="details-close" aria-label="Collapse inspector panel">▸</button>
+        <button type="button" class="drawer-close" id="details-close" aria-label="Close inspector panel">${renderInspectorPanelIcon("left")}</button>
       </div>
       <p class="drawer-copy">${escapeHTML(node ? "Inspect connected nodes and metadata here." : "Use the graph canvas or project search to inspect files, modules, and symbols.")}</p>
       ${node ? `
@@ -312,6 +392,8 @@ function bindEvents(filteredGraph, layout) {
       };
       state.query = event.target.value;
       state.selectedNode = null;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   }
@@ -321,6 +403,8 @@ function bindEvents(filteredGraph, layout) {
     toggle.addEventListener("change", (event) => {
       state.showChangedOnly = event.target.checked;
       state.selectedNode = null;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   }
@@ -340,6 +424,8 @@ function bindEvents(filteredGraph, layout) {
   if (sidebarToggle) {
     sidebarToggle.addEventListener("click", () => {
       state.sidebarCollapsed = !state.sidebarCollapsed;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   }
@@ -348,6 +434,8 @@ function bindEvents(filteredGraph, layout) {
   if (sidebarClose) {
     sidebarClose.addEventListener("click", () => {
       state.sidebarCollapsed = true;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   }
@@ -356,6 +444,8 @@ function bindEvents(filteredGraph, layout) {
   if (detailsToggle) {
     detailsToggle.addEventListener("click", () => {
       state.detailsCollapsed = !state.detailsCollapsed;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   }
@@ -364,6 +454,8 @@ function bindEvents(filteredGraph, layout) {
   if (detailsClose) {
     detailsClose.addEventListener("click", () => {
       state.detailsCollapsed = true;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   }
@@ -372,6 +464,8 @@ function bindEvents(filteredGraph, layout) {
     button.addEventListener("click", () => {
       state.selectedProject = button.getAttribute("data-project-id");
       state.selectedNode = null;
+      state.userAdjustedViewport = false;
+      state.lastFittedSignature = "";
       render();
     });
   });
@@ -401,6 +495,12 @@ function bindEvents(filteredGraph, layout) {
       event.preventDefault();
       const liveRect = canvas.getBoundingClientRect();
       state.canvasSize = { width: liveRect.width, height: liveRect.height };
+      const insets = getWorkspaceInsets();
+      const world = getWorldBounds(filteredGraph ? filteredGraph.nodes : [], layout || {});
+      const availableWidth = liveRect.width - insets.left - insets.right;
+      const availableHeight = liveRect.height - insets.top - insets.bottom;
+      const currentScaledWidth = world.width * state.viewport.scale;
+      const currentScaledHeight = world.height * state.viewport.scale;
       const pointerX = event.clientX - liveRect.left;
       const pointerY = event.clientY - liveRect.top;
       const worldX = (pointerX - state.viewport.offsetX) / state.viewport.scale;
@@ -408,10 +508,22 @@ function bindEvents(filteredGraph, layout) {
       const delta = event.deltaY < 0 ? 0.06 : -0.06;
       const minScale = clamp(state.fitScale || 0.02, 0.02, 1.4);
       const nextScale = clamp(state.viewport.scale + delta, minScale, 2.2);
-      const nextOffsetX = pointerX - worldX * nextScale;
-      const nextOffsetY = pointerY - worldY * nextScale;
+      const nextScaledWidth = world.width * nextScale;
+      const nextScaledHeight = world.height * nextScale;
+      const preserveCenterX = currentScaledWidth <= availableWidth;
+      const preserveCenterY = currentScaledHeight <= availableHeight;
+      const nextOffsetX = preserveCenterX
+        ? (state.viewport.offsetX + currentScaledWidth / 2) - nextScaledWidth / 2
+        : pointerX - worldX * nextScale;
+      const nextOffsetY = preserveCenterY
+        ? (state.viewport.offsetY + currentScaledHeight / 2) - nextScaledHeight / 2
+        : pointerY - worldY * nextScale;
       state.viewport.scale = nextScale;
-      constrainViewport(filteredGraph, layout, nextOffsetX, nextOffsetY);
+      state.userAdjustedViewport = true;
+      constrainViewport(filteredGraph, layout, nextOffsetX, nextOffsetY, {
+        overscrollX: liveRect.width * 0.35,
+        overscrollY: liveRect.height * 0.35,
+      });
       render();
     }, { passive: false });
 
@@ -455,6 +567,7 @@ function handlePointerMove(event) {
       return;
     }
     state.pointer.moved = true;
+    state.userAdjustedViewport = true;
     const graph = getFilteredGraph();
     const layout = graph ? ensureLayout(graph) : {};
     const canvas = document.getElementById("graph-canvas");
@@ -475,6 +588,7 @@ function handlePointerMove(event) {
     const layout = ensureLayout(graph);
     const canvas = document.getElementById("graph-canvas");
     const rect = canvas ? canvas.getBoundingClientRect() : { width: 960, height: 560 };
+    const insets = getWorkspaceInsets();
     const deltaX = event.clientX - state.pointer.startX;
     const deltaY = event.clientY - state.pointer.startY;
     const movedEnough = Math.abs(deltaX) > DRAG_THRESHOLD || Math.abs(deltaY) > DRAG_THRESHOLD;
@@ -483,13 +597,14 @@ function handlePointerMove(event) {
     }
     state.pointer.moved = true;
     state.draggingNode = state.pointer.id;
+    state.userAdjustedViewport = true;
     const nextX = state.pointer.originX + deltaX / state.viewport.scale;
     const nextY = state.pointer.originY + deltaY / state.viewport.scale;
-    const visibleMinX = (-state.viewport.offsetX) / state.viewport.scale;
-    const visibleMinY = (-state.viewport.offsetY) / state.viewport.scale;
+    const visibleMinX = (insets.left - state.viewport.offsetX) / state.viewport.scale;
+    const visibleMinY = (insets.top - state.viewport.offsetY) / state.viewport.scale;
     const nodeWidth = layout[state.pointer.id].width || NODE_MIN_WIDTH;
-    const visibleMaxX = (rect.width - state.viewport.offsetX) / state.viewport.scale - nodeWidth;
-    const visibleMaxY = (rect.height - state.viewport.offsetY) / state.viewport.scale - NODE_HEIGHT;
+    const visibleMaxX = (rect.width - insets.right - state.viewport.offsetX) / state.viewport.scale - nodeWidth;
+    const visibleMaxY = (rect.height - insets.bottom - state.viewport.offsetY) / state.viewport.scale - NODE_HEIGHT;
     layout[state.pointer.id] = {
       x: clamp(nextX, visibleMinX + 8, Math.max(visibleMinX + 8, visibleMaxX - 8)),
       y: clamp(nextY, visibleMinY + 8, Math.max(visibleMinY + 8, visibleMaxY - 8)),
@@ -761,16 +876,16 @@ function renderEdgeDefs() {
   return `
     <defs>
       <marker id="arrow-default" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(15, 118, 110, 0.35)" />
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255, 255, 255, 0.68)" />
       </marker>
       <marker id="arrow-highlight" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(15, 118, 110, 0.92)" />
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255, 255, 255, 0.96)" />
       </marker>
       <marker id="arrow-changed" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(194, 65, 12, 0.92)" />
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(251, 146, 60, 0.96)" />
       </marker>
       <marker id="arrow-dimmed" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(15, 118, 110, 0.14)" />
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255, 255, 255, 0.16)" />
       </marker>
     </defs>
   `;
@@ -799,12 +914,15 @@ function maybeFitViewport(graph, layout) {
     return;
   }
   const rect = canvas.getBoundingClientRect();
+  const insets = getWorkspaceInsets();
   const signature = [
     graph.project.id,
     graph.nodes.length,
     graph.edges.length,
     state.query,
     state.showChangedOnly,
+    state.sidebarCollapsed,
+    state.detailsCollapsed,
     Math.round(rect.width),
     Math.round(rect.height),
     Math.round(world.width),
@@ -814,20 +932,25 @@ function maybeFitViewport(graph, layout) {
     return;
   }
   const padding = 40;
-  const availableWidth = Math.max(120, rect.width - padding * 2);
-  const availableHeight = Math.max(120, rect.height - padding * 2);
+  const availableWidth = Math.max(120, rect.width - insets.left - insets.right - padding * 2);
+  const availableHeight = Math.max(120, rect.height - insets.top - insets.bottom - padding * 2);
   const scaleX = availableWidth / world.width;
   const scaleY = availableHeight / world.height;
   const scale = clamp(Math.min(scaleX, scaleY, 1), 0.02, 1.4);
   state.fitScale = scale;
   state.viewport.scale = scale;
-  constrainViewport(graph, layout, Math.round((rect.width - world.width * scale) / 2), Math.round((rect.height - world.height * scale) / 2));
+  const desiredOffsetX = Math.round(insets.left + (availableWidth - world.width * scale) / 2);
+  const desiredOffsetY = Math.round(insets.top + (availableHeight - world.height * scale) / 2);
+  constrainViewport(graph, layout, desiredOffsetX, desiredOffsetY);
   state.lastFittedSignature = signature;
   render();
 }
 
 function requestFitViewport(graph) {
   if (!graph) {
+    return;
+  }
+  if (state.userAdjustedViewport) {
     return;
   }
   if (state.pendingFitFrame) {
@@ -852,52 +975,57 @@ function constrainViewport(graph, layout, desiredOffsetX, desiredOffsetY, option
   }
   const canvas = document.getElementById("graph-canvas");
   const rect = canvas ? canvas.getBoundingClientRect() : state.canvasSize;
+  const insets = getWorkspaceInsets();
   const world = getWorldBounds(graph.nodes, layout);
   const scaledWidth = world.width * state.viewport.scale;
   const scaledHeight = world.height * state.viewport.scale;
   const overscrollX = opts.overscrollX || 0;
   const overscrollY = opts.overscrollY || 0;
-  const centeredOffsetX = Math.round((rect.width - scaledWidth) / 2);
-  const centeredOffsetY = Math.round((rect.height - scaledHeight) / 2);
+  const availableWidth = rect.width - insets.left - insets.right;
+  const availableHeight = rect.height - insets.top - insets.bottom;
+  const minVisibleOffsetX = insets.left;
+  const maxVisibleOffsetX = rect.width - insets.right - scaledWidth;
+  const minVisibleOffsetY = insets.top;
+  const maxVisibleOffsetY = rect.height - insets.bottom - scaledHeight;
 
-  if (scaledWidth <= rect.width) {
+  if (scaledWidth <= availableWidth) {
     state.viewport.offsetX = clamp(
       desiredOffsetX,
-      centeredOffsetX - overscrollX,
-      centeredOffsetX + overscrollX
+      Math.min(minVisibleOffsetX - overscrollX, maxVisibleOffsetX - overscrollX),
+      Math.max(minVisibleOffsetX + overscrollX, maxVisibleOffsetX + overscrollX)
     );
   } else {
     state.viewport.offsetX = clamp(
       desiredOffsetX,
-      rect.width - scaledWidth - overscrollX,
-      overscrollX
+      rect.width - insets.right - scaledWidth - overscrollX,
+      insets.left + overscrollX
     );
   }
 
-  if (scaledHeight <= rect.height) {
+  if (scaledHeight <= availableHeight) {
     state.viewport.offsetY = clamp(
       desiredOffsetY,
-      centeredOffsetY - overscrollY,
-      centeredOffsetY + overscrollY
+      Math.min(minVisibleOffsetY - overscrollY, maxVisibleOffsetY - overscrollY),
+      Math.max(minVisibleOffsetY + overscrollY, maxVisibleOffsetY + overscrollY)
     );
   } else {
     state.viewport.offsetY = clamp(
       desiredOffsetY,
-      rect.height - scaledHeight - overscrollY,
-      overscrollY
+      rect.height - insets.bottom - scaledHeight - overscrollY,
+      insets.top + overscrollY
     );
   }
 }
 
-function renderMinimap(nodes, edges, positions, world) {
+function renderMinimap(nodes, edges, positions, world, insets, controlInsets) {
   const miniWidth = 220;
   const miniHeight = 140;
   const scaleX = miniWidth / Math.max(1, world.width);
   const scaleY = miniHeight / Math.max(1, world.height);
-  const viewportWidth = state.canvasSize.width / state.viewport.scale;
-  const viewportHeight = state.canvasSize.height / state.viewport.scale;
-  const viewX = Math.max(0, -state.viewport.offsetX / state.viewport.scale);
-  const viewY = Math.max(0, -state.viewport.offsetY / state.viewport.scale);
+  const viewportWidth = Math.max(0, (state.canvasSize.width - insets.left - insets.right) / state.viewport.scale);
+  const viewportHeight = Math.max(0, (state.canvasSize.height - insets.top - insets.bottom) / state.viewport.scale);
+  const viewX = Math.max(0, (insets.left - state.viewport.offsetX) / state.viewport.scale);
+  const viewY = Math.max(0, (insets.top - state.viewport.offsetY) / state.viewport.scale);
 
   const miniNodes = nodes.map((node) => {
     const position = positions[node.id];
@@ -906,14 +1034,14 @@ function renderMinimap(nodes, edges, positions, world) {
 
   if (state.minimapCollapsed) {
     return `
-      <div class="minimap is-collapsed">
+      <div class="minimap is-collapsed" style="right:${18 + controlInsets.right}px;">
         <button type="button" class="minimap-toggle" id="minimap-toggle" aria-label="Expand minimap" title="Expand minimap">◱</button>
       </div>
     `;
   }
 
   return `
-    <div class="minimap">
+    <div class="minimap" style="right:${18 + controlInsets.right}px;">
       <button type="button" class="minimap-toggle" id="minimap-toggle" aria-label="Minimize minimap" title="Minimize minimap">◲</button>
       <svg width="${miniWidth}" height="${miniHeight}" viewBox="0 0 ${miniWidth} ${miniHeight}">
         ${miniNodes}
