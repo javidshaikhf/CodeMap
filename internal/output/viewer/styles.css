@@ -29,11 +29,10 @@ body {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
-  gap: 20px;
+  position: relative;
   height: 100vh;
-  padding: 24px;
+  width: 100vw;
+  overflow: hidden;
 }
 
 .panel {
@@ -46,11 +45,36 @@ body {
 
 .sidebar,
 .details {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  width: 340px;
   padding: 20px;
-  height: 100%;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  z-index: 5;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.sidebar {
+  left: 16px;
+}
+
+.details {
+  right: 16px;
+}
+
+.sidebar.is-collapsed {
+  transform: translateX(calc(-100% - 24px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.details.is-collapsed {
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
 }
 
 .hero {
@@ -66,7 +90,7 @@ body {
 }
 
 .hero h1,
-.graph-header h2 {
+.drawer-header h1 {
   margin: 0;
   font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
   font-size: 28px;
@@ -101,8 +125,7 @@ body {
 .filter-chip,
 .project-card,
 .detail-block,
-.legend-item,
-.stat-card {
+.legend-item {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--panel-strong);
@@ -134,66 +157,98 @@ body {
   background: var(--changed-soft);
 }
 
+.drawer-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawer-copy {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.drawer-close,
+.drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 250, 240, 0.96);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  box-shadow: 0 10px 24px rgba(22, 48, 43, 0.14);
+}
+
+.drawer-close {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+}
+
+.drawer-toggle {
+  position: absolute;
+  top: 18px;
+  z-index: 6;
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+}
+
+.drawer-toggle-left {
+  left: 18px;
+}
+
+.drawer-toggle-right {
+  right: 18px;
+}
+
+.drawer-toggle:hover,
+.drawer-close:hover {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.drawer-toggle-left.is-open {
+  left: 372px;
+}
+
+.drawer-toggle-right.is-open {
+  right: 372px;
+}
+
 .graph-panel {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  position: relative;
+  width: 100%;
   height: 100%;
-  min-height: 0;
   overflow: hidden;
-}
-
-.graph-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: end;
-}
-
-.stats {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.stat-card {
-  padding: 12px 14px;
-  min-width: 120px;
-}
-
-.stat-card strong {
-  display: block;
-  font-size: 22px;
-  font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-}
-
-.graph-stage {
-  display: grid;
-  gap: 14px;
-  min-height: 0;
-  flex: 1;
-}
-
-.graph-toolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .canvas {
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  min-height: 480px;
-  height: 100%;
-  border: 1px solid var(--border);
-  border-radius: 24px;
   cursor: grab;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(248, 242, 231, 0.75)),
     repeating-linear-gradient(90deg, transparent, transparent 38px, rgba(22, 48, 43, 0.03) 38px, rgba(22, 48, 43, 0.03) 39px),
     repeating-linear-gradient(0deg, transparent, transparent 38px, rgba(22, 48, 43, 0.03) 38px, rgba(22, 48, 43, 0.03) 39px);
+}
+
+.workspace-stats {
+  position: absolute;
+  left: 18px;
+  bottom: 22px;
+  z-index: 4;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 13px;
+  text-shadow: 0 1px 0 rgba(255, 252, 246, 0.7);
 }
 
 .canvas.is-panning {

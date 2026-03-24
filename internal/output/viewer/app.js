@@ -16,6 +16,8 @@ const state = {
   pendingFitFrame: 0,
   fitScale: 1,
   minimapCollapsed: true,
+  sidebarCollapsed: true,
+  detailsCollapsed: true,
 };
 
 const NODE_HEIGHT = 84;
@@ -119,8 +121,8 @@ function render() {
 
   root.innerHTML = `
     <div class="app-shell">
-      ${renderSidebar()}
       ${renderGraphPanel(filteredGraph, layout)}
+      ${renderSidebar()}
       ${renderDetailsPanel(selectedNode, connections)}
     </div>
   `;
@@ -144,12 +146,15 @@ function renderSidebar() {
   `).join("");
 
   return `
-    <aside class="sidebar panel">
-      <div class="hero">
-        <div class="eyebrow">Codemap</div>
-        <h1>Architecture graphs, split by project</h1>
-        <p>Open a project, filter by path or node type, and inspect changed relationships directly from the PR artifact.</p>
+    <aside class="sidebar panel${state.sidebarCollapsed ? " is-collapsed" : ""}">
+      <div class="drawer-header">
+        <div>
+          <div class="eyebrow">Codemap</div>
+          <h1>Projects</h1>
+        </div>
+        <button type="button" class="drawer-close" id="sidebar-close" aria-label="Collapse project panel">◂</button>
       </div>
+      <p class="drawer-copy">Open a project, filter by path or node type, and inspect changed relationships directly from the PR artifact.</p>
       <input class="search" id="search-input" value="${escapeHTML(state.query)}" placeholder="Search files, modules, classes" />
       <div class="filters">
         <label class="filter-chip">
@@ -219,31 +224,27 @@ function renderGraphPanel(graph, layout) {
   `).join("");
 
   return `
-    <main class="graph-panel panel">
-      <div class="graph-header">
-        <div>
-          <div class="eyebrow">Project map</div>
-          <h2>${escapeHTML(graph.project.name)}</h2>
-          <div class="meta">${escapeHTML(graph.project.root)}</div>
+    <main class="graph-panel">
+      <button type="button" class="drawer-toggle drawer-toggle-left${state.sidebarCollapsed ? "" : " is-open"}" id="sidebar-toggle" aria-label="${state.sidebarCollapsed ? "Open project panel" : "Close project panel"}">
+        ${state.sidebarCollapsed ? "▸" : "◂"}
+      </button>
+      <button type="button" class="drawer-toggle drawer-toggle-right${state.detailsCollapsed ? "" : " is-open"}" id="details-toggle" aria-label="${state.detailsCollapsed ? "Open inspector panel" : "Close inspector panel"}">
+        ${state.detailsCollapsed ? "◂" : "▸"}
+      </button>
+      <div class="canvas${state.viewport.isPanning ? " is-panning" : ""}" id="graph-canvas">
+        <div class="viewport" id="graph-viewport" style="width:${world.width}px; height:${world.height}px; transform: translate(${state.viewport.offsetX}px, ${state.viewport.offsetY}px) scale(${state.viewport.scale});">
+          <svg class="edge-layer" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" preserveAspectRatio="none">
+            ${renderEdgeDefs()}
+            ${edgeLines}
+          </svg>
+          <div class="node-layer" style="width:${world.width}px; height:${world.height}px;">${nodeButtons}</div>
         </div>
-        <div class="stats">
-          ${renderStatCard("Nodes", graph.nodes.length)}
-          ${renderStatCard("Edges", graph.edges.length)}
-          ${renderStatCard("Changed", changedCount)}
+        <div class="workspace-stats meta">
+          <span>${graph.nodes.length} nodes</span>
+          <span>${graph.edges.length} edges</span>
+          <span>${changedCount} changed</span>
         </div>
-      </div>
-      <div class="graph-stage">
-        <div class="graph-toolbar meta">Top-to-bottom layout is based on likely root scripts. Scroll to zoom, drag the background to pan, and drag nodes to rearrange the map.</div>
-        <div class="canvas${state.viewport.isPanning ? " is-panning" : ""}" id="graph-canvas">
-          <div class="viewport" id="graph-viewport" style="width:${world.width}px; height:${world.height}px; transform: translate(${state.viewport.offsetX}px, ${state.viewport.offsetY}px) scale(${state.viewport.scale});">
-            <svg class="edge-layer" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" preserveAspectRatio="none">
-              ${renderEdgeDefs()}
-              ${edgeLines}
-            </svg>
-            <div class="node-layer" style="width:${world.width}px; height:${world.height}px;">${nodeButtons}</div>
-          </div>
-          ${minimap}
-        </div>
+        ${minimap}
       </div>
     </main>
   `;
@@ -251,12 +252,15 @@ function renderGraphPanel(graph, layout) {
 
 function renderDetailsPanel(node, connections) {
   return `
-    <aside class="details panel">
-      <div class="hero">
-        <div class="eyebrow">Inspector</div>
-        <h1>${escapeHTML(node ? node.label : "Select a node")}</h1>
-        <p>${escapeHTML(node ? "Inspect connected nodes and metadata here." : "Use the graph canvas or project search to inspect files, modules, and symbols.")}</p>
+    <aside class="details panel${state.detailsCollapsed ? " is-collapsed" : ""}">
+      <div class="drawer-header">
+        <div>
+          <div class="eyebrow">Inspector</div>
+          <h1>${escapeHTML(node ? node.label : "Select a node")}</h1>
+        </div>
+        <button type="button" class="drawer-close" id="details-close" aria-label="Collapse inspector panel">▸</button>
       </div>
+      <p class="drawer-copy">${escapeHTML(node ? "Inspect connected nodes and metadata here." : "Use the graph canvas or project search to inspect files, modules, and symbols.")}</p>
       ${node ? `
         <div class="detail-block">
           <div class="detail-title">Node metadata</div>
@@ -297,10 +301,6 @@ function renderConnectionList(title, items) {
   `;
 }
 
-function renderStatCard(label, value) {
-  return `<div class="stat-card"><strong>${value}</strong>${escapeHTML(label)}</div>`;
-}
-
 function bindEvents(filteredGraph, layout) {
   const searchInput = document.getElementById("search-input");
   if (searchInput) {
@@ -332,6 +332,38 @@ function bindEvents(filteredGraph, layout) {
     });
     minimapToggle.addEventListener("click", () => {
       state.minimapCollapsed = !state.minimapCollapsed;
+      render();
+    });
+  }
+
+  const sidebarToggle = document.getElementById("sidebar-toggle");
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      render();
+    });
+  }
+
+  const sidebarClose = document.getElementById("sidebar-close");
+  if (sidebarClose) {
+    sidebarClose.addEventListener("click", () => {
+      state.sidebarCollapsed = true;
+      render();
+    });
+  }
+
+  const detailsToggle = document.getElementById("details-toggle");
+  if (detailsToggle) {
+    detailsToggle.addEventListener("click", () => {
+      state.detailsCollapsed = !state.detailsCollapsed;
+      render();
+    });
+  }
+
+  const detailsClose = document.getElementById("details-close");
+  if (detailsClose) {
+    detailsClose.addEventListener("click", () => {
+      state.detailsCollapsed = true;
       render();
     });
   }
