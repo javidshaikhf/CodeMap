@@ -132,15 +132,50 @@ The checked-in `web/src` folder mirrors the viewer direction in TypeScript for f
 
 ## GitHub Actions
 
-Use the composite action from this repo:
+Use CodeMap directly from GitHub:
 
 ```yaml
-- uses: ./
+name: CodeMap
+
+on:
+  pull_request:
+
+jobs:
+  codemap:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run CodeMap
+        uses: javidshaikhf/CodeMap@main
+        with:
+          output-dir: codemap-out
+```
+
+Recommended for stable usage:
+
+```yaml
+- uses: javidshaikhf/CodeMap@v1
   with:
     output-dir: codemap-out
 ```
 
-The action:
+To publish a stable major tag:
+
+```bash
+git tag v1
+git push origin v1
+```
+
+The action will:
 
 - detects changed files in pull requests
 - runs the Go analyzer
