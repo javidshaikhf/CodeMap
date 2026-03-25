@@ -254,6 +254,7 @@ function renderGraphPanel(graph, layout) {
   const positions = layout;
   const nodeIndex = Object.fromEntries(canvasNodes.map((node) => [node.id, node]));
   const edges = graph.edges.filter((edge) => nodeIndex[edge.source] && nodeIndex[edge.target]);
+  const renderableEdges = buildRenderableEdges(edges);
   const changedCount = graph.nodes.filter((node) => node.changed).length;
   const world = getWorldBounds(canvasNodes, positions);
   const highlight = getHighlightState(canvasNodes, edges, state.selectedNode);
@@ -264,25 +265,24 @@ function renderGraphPanel(graph, layout) {
   };
   const minimap = renderMinimap(canvasNodes, edges, positions, world, insets, controlInsets);
 
-  const edgeLines = edges.map((edge, index) => {
+  const edgeLines = renderableEdges.map((edge) => {
     const source = positions[edge.source];
     const target = positions[edge.target];
-    const reverseExists = edges.some((candidate, candidateIndex) =>
-      candidateIndex !== index &&
-      candidate.source === edge.target &&
-      candidate.target === edge.source
-    );
+    const isHighlighted = edge.edgeIDs.some((id) => highlight.edgeIDs.has(id));
     const classes = [
       "graph-edge",
-      highlight.edgeIDs.has(edge.id) ? "is-highlighted" : "",
-      highlight.hasSelection && !highlight.edgeIDs.has(edge.id) ? "is-dimmed" : "",
+      edge.bidirectional ? "is-bidirectional" : "",
+      isHighlighted ? "is-highlighted" : "",
+      highlight.hasSelection && !isHighlighted ? "is-dimmed" : "",
       edge.changed ? "changed" : "",
     ].filter(Boolean).join(" ");
     const stroke = edge.changed ? "rgba(251, 146, 60, 0.92)" : "rgba(255, 255, 255, 0.62)";
     const strokeWidth = highlight.edgeIDs.has(edge.id) ? 3.6 : (edge.changed ? 2.7 : 1.8);
-    const markerID = getMarkerID(edge, highlight.edgeIDs.has(edge.id), highlight.hasSelection && !highlight.edgeIDs.has(edge.id));
-    const path = describeEdgePath(source, target, reverseExists ? edge.source < edge.target : false, reverseExists);
-    return `<path class="${classes}" d="${path}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="none" marker-end="url(#${markerID})" />`;
+    const markerID = edge.bidirectional ? "" : getMarkerID(edge, isHighlighted, highlight.hasSelection && !isHighlighted);
+    const path = describeEdgePath(source, target, false, false);
+    const dasharray = edge.bidirectional ? ` stroke-dasharray="8 7"` : "";
+    const markerEnd = edge.bidirectional ? "" : ` marker-end="url(#${markerID})"`;
+    return `<path class="${classes}" d="${path}" stroke="${stroke}" stroke-width="${isHighlighted ? 3.6 : (edge.changed ? 2.7 : 1.8)}" fill="none"${dasharray}${markerEnd} />`;
   }).join("");
 
   const nodeButtons = canvasNodes.map((node) => `
@@ -854,11 +854,86 @@ function getHighlightState(nodes, edges, selectedNodeID) {
   return state;
 }
 
+function buildRenderableEdges(edges) {
+  const byPair = new Map();
+
+  edges.forEach((edge) => {
+    const key = edge.source === edge.target
+      ? `${edge.source}::${edge.target}::self`
+      : [edge.source, edge.target].sort().join("::");
+    const existing = byPair.get(key);
+    if (!existing) {
+      byPair.set(key, {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        edgeIDs: [edge.id],
+        changed: !!edge.changed,
+        bidirectional: false,
+        directions: new Set([`${edge.source}->${edge.target}`]),
+      });
+      return;
+    }
+
+    existing.edgeIDs.push(edge.id);
+    existing.changed = existing.changed || !!edge.changed;
+    existing.directions.add(`${edge.source}->${edge.target}`);
+
+    if (
+      edge.source !== edge.target &&
+      existing.directions.has(`${edge.target}->${edge.source}`)
+    ) {
+      existing.bidirectional = true;
+      if (edge.source < edge.target) {
+        existing.source = edge.source;
+        existing.target = edge.target;
+      } else {
+        existing.source = edge.target;
+        existing.target = edge.source;
+      }
+    }
+  });
+
+  return [...byPair.values()];
+}
+
+function getNodeCenter(node) {
+  return {
+    x: node.x + node.width / 2,
+    y: node.y + NODE_HEIGHT / 2,
+  };
+}
+
+function getRectBoundaryPoint(node, towardX, towardY) {
+  const center = getNodeCenter(node);
+  const dx = towardX - center.x;
+  const dy = towardY - center.y;
+
+  if (dx === 0 && dy === 0) {
+    return center;
+  }
+
+  const halfWidth = node.width / 2;
+  const halfHeight = NODE_HEIGHT / 2;
+  const scaleX = dx === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx);
+  const scaleY = dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy);
+  const scale = Math.min(scaleX, scaleY);
+
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  };
+}
+
 function describeEdgePath(source, target, invertCurve, curved) {
-  const startX = source.x + source.width / 2;
-  const startY = source.y + NODE_HEIGHT / 2;
-  const endX = target.x + target.width / 2;
-  const endY = target.y + NODE_HEIGHT / 2;
+  const targetCenter = getNodeCenter(target);
+  const sourceCenter = getNodeCenter(source);
+  const start = getRectBoundaryPoint(source, targetCenter.x, targetCenter.y);
+  const end = getRectBoundaryPoint(target, sourceCenter.x, sourceCenter.y);
+  const startX = start.x;
+  const startY = start.y;
+  const endX = end.x;
+  const endY = end.y;
   if (!curved) {
     return `M ${startX} ${startY} L ${endX} ${endY}`;
   }
