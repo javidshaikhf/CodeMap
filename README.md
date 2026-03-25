@@ -163,16 +163,9 @@ jobs:
 Recommended for stable usage:
 
 ```yaml
-- uses: javidshaikhf/CodeMap@v1
+- uses: javidshaikhf/CodeMap@v0.0.1
   with:
     output-dir: codemap-out
-```
-
-To publish a stable major tag:
-
-```bash
-git tag v1
-git push origin v1
 ```
 
 The action will:
